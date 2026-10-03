@@ -213,8 +213,8 @@ if [[ ! -d "$REPO/.git" ]]; then
   git -C "$REPO" remote add upstream "$UPSTREAM_URL"
 fi
 cd "$REPO"
-git fetch --quiet origin
-git fetch --quiet upstream --tags
+git fetch --quiet origin || fail "could not fetch origin"
+git fetch --quiet upstream --tags || fail "could not fetch upstream tags"
 # This clone belongs to the job alone, so it always restarts from the pushed branch.
 git checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 git reset --quiet --hard "origin/$BRANCH"
@@ -276,8 +276,13 @@ esac
 [[ -d "$built_app" ]] || fail "build produced no Orca.app at $built_app"
 codesign --verify --deep --strict "$built_app" || fail "built app signature invalid"
 
-git push --quiet origin "$BRANCH" || fail "push of $BRANCH failed"
-log "Pushed $BRANCH ($current) to origin."
+git fetch --quiet origin || fail "could not fetch origin before pushing $current"
+if git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
+  log "origin/$BRANCH already contains $current; nothing to push."
+else
+  git push --quiet origin "$BRANCH" || fail "push of $BRANCH failed"
+  log "Pushed $BRANCH ($current) to origin."
+fi
 
 staged="$STATE_DIR/staged/Orca.app"
 rm -rf "$STATE_DIR/staged"
