@@ -87,6 +87,7 @@ const handleMacAppActivation = createMacAppActivationHandler({
   requestActivation: requestDesktopActivation
 })
 
+if (process.env.ORCA_STARTUP_DIAGNOSTICS) process.stderr.write('[startup] wip-index-before-preflight\n')
 const preflightReady = runMainProcessPreflight({
   focusExistingWindow,
   requestDesktopActivation

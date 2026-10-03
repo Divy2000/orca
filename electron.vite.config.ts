@@ -160,6 +160,9 @@ function createStartupDiagnosticsBanner(chunkName: string): string {
       Module._load = function (request, parent, isMain) {
         const parentName = parent && parent.filename ? parent.filename : null
         writeTraceLine('[bootstrap] require-start request=' + safeJson(request) + ' parent=' + safeJson(parentName) + ' isMain=' + safeJson(Boolean(isMain)))
+        if (typeof request === 'string' && (request.endsWith('.node') || request.includes('windows-process-tree'))) {
+          writeTraceLine('[bootstrap] wip-native-require-stack ' + safeJson(String(new Error('native require').stack)))
+        }
         try {
           const result = Reflect.apply(originalLoad, this, arguments)
           writeTraceLine('[bootstrap] require-ok request=' + safeJson(request))

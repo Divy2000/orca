@@ -592,6 +592,7 @@ jobs:
           ORCA_E2E_FORWARD_APP_LOGS: '1'
           ORCA_E2E_PRESERVE_PROFILE_LOGS_DIR: ${{ github.workspace }}\test-results\profile-logs
           # A launch that dies before its window prints this trail into Playwright's call log.
+          NODE_OPTIONS: --max-old-space-size=4096 --enable-source-maps
           ORCA_STARTUP_DIAGNOSTICS: trace
           ORCA_STARTUP_DIAGNOSTICS_FILE: ${{ github.workspace }}\test-results\startup-trace.log
           ELECTRON_ENABLE_LOGGING: '1'
@@ -602,7 +603,7 @@ jobs:
           New-Item -Force $key | Out-Null
           New-ItemProperty -Force $key -Name DumpFolder -PropertyType ExpandString -Value "$PWD\test-results\dumps" | Out-Null
           New-ItemProperty -Force $key -Name DumpType -PropertyType DWord -Value 1 | Out-Null
-          pnpm exec playwright test --config tests/playwright.config.ts tests/e2e/orcad-serve-mode-switch.spec.ts --project=electron-headless --workers=1 --grep "daemon owns"
+          pnpm exec playwright test --config tests/playwright.config.ts tests/e2e/orcad-serve-mode-switch.spec.ts --project=electron-headless --workers=1
       - name: Application event log
         if: failure()
         run: Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-30)} -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -in 'Application Error','Windows Error Reporting','.NET Runtime' } | Format-List TimeCreated,ProviderName,Id,Message

@@ -16,7 +16,7 @@ export function writeStartupDiagnosticLine(
 }
 
 export function isStartupDiagnosticsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env[STARTUP_DIAGNOSTICS_ENV] === '1'
+  return env[STARTUP_DIAGNOSTICS_ENV] === '1' || env[STARTUP_DIAGNOSTICS_ENV] === 'trace'
 }
 
 export function logStartupDiagnostic(
