@@ -35,3 +35,26 @@ it('describes the available action as a download', () => {
   expect(screen.getByText(/is available\. Click "Download Update" to download it\./)).toBeTruthy()
   expect(screen.queryByText(/download and install it/)).toBeNull()
 })
+
+it('shows the main-process message when a check settles as not-available', () => {
+  useAppStore.setState({
+    updateStatus: {
+      state: 'not-available',
+      userInitiated: true,
+      message: 'Updates are managed by the fork sync job; sync started.'
+    }
+  })
+
+  render(<GeneralUpdateSettingsSection />)
+
+  expect(screen.getByText('Updates are managed by the fork sync job; sync started.')).toBeTruthy()
+  expect(screen.queryByText(/on the latest version/)).toBeNull()
+})
+
+it('keeps the latest-version copy when not-available carries no message', () => {
+  useAppStore.setState({ updateStatus: { state: 'not-available', userInitiated: true } })
+
+  render(<GeneralUpdateSettingsSection />)
+
+  expect(screen.getByText(/on the latest version/)).toBeTruthy()
+})

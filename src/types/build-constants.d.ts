@@ -20,3 +20,7 @@ declare const ORCA_POSTHOG_WRITE_KEY: string | null
 // point a packaged build at a staging server without re-running the
 // release pipeline.
 declare const ORCA_DIAGNOSTICS_TOKEN_URL: string | null
+
+// Fork-only: `true` when the build was compiled with ORCA_SELF_MANAGED_UPDATES=1,
+// which replaces the upstream auto-updater with the local fork sync job.
+declare const ORCA_SELF_MANAGED_UPDATES: boolean

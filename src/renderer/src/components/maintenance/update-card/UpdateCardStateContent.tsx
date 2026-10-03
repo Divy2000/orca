@@ -62,7 +62,10 @@ export function UpdateCardStateContent({
     return (
       <UpdateCheckFeedback
         icon="check"
-        text={translate('auto.components.UpdateCard.ea2a41adbe', "You're on the latest version.")}
+        text={
+          status.message ??
+          translate('auto.components.UpdateCard.ea2a41adbe', "You're on the latest version.")
+        }
       />
     )
   }

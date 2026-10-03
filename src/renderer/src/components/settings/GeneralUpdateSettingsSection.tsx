@@ -195,10 +195,11 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
             </>
           )}
           {updateStatus.state === 'not-available' &&
-            translate(
-              'auto.components.settings.GeneralUpdateSettingsSection.f40d88390d',
-              'You’re on the latest version.'
-            )}
+            (updateStatus.message ??
+              translate(
+                'auto.components.settings.GeneralUpdateSettingsSection.f40d88390d',
+                'You’re on the latest version.'
+              ))}
           {updateStatus.state === 'downloading' &&
             translate(
               'auto.components.settings.GeneralUpdateSettingsSection.2a48034c4c',

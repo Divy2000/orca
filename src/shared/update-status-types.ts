@@ -78,7 +78,7 @@ export type UpdateStatus = (
        *  Additive and optional — older clients simply keep offering their own download. */
       externallyManaged?: boolean
     }
-  | { state: 'not-available'; userInitiated?: boolean }
+  | { state: 'not-available'; userInitiated?: boolean; message?: string }
   | { state: 'downloading'; percent: number; version: string; activeNudgeId?: string }
   | { state: 'downloaded'; version: string; releaseUrl?: string; activeNudgeId?: string }
   | {

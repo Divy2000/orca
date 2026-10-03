@@ -20,6 +20,11 @@ import { getServeUpdateHandoffFailure } from '../serve-update-handoff'
 import { recordUpdaterLifecycle } from '../updater-lifecycle-diagnostics'
 import { AUTO_UPDATE_CHECK_INTERVAL_MS } from './updater-state'
 import { UpdaterDownloadInstall } from './updater-download-install'
+import {
+  isSelfManagedUpdates,
+  SELF_MANAGED_SYNC_STARTED_MESSAGE,
+  startForkSyncJob
+} from './self-managed-updates'
 import type { PreQuitCleanupFailureMode, UpdateInstallMode } from './updater-state'
 
 export type UpdaterSetupOptions = {
@@ -37,19 +42,57 @@ export type UpdaterSetupOptions = {
 
 /** Initializes electron-updater and attaches lifecycle/event bridges. */
 export class UpdaterSetup extends UpdaterDownloadInstall {
+  private forkSyncStartInFlight = false
+
   checkForUpdates(): void {
+    if (isSelfManagedUpdates()) {
+      return
+    }
     this.checkForUpdatesInBackground()
   }
 
   checkForUpdatesFromMenu(options?: UpdateCheckOptions): void {
+    if (isSelfManagedUpdates()) {
+      void this.startForkSyncFromMenu()
+      return
+    }
     super.checkForUpdatesFromMenu(options)
   }
 
+  // Why: fork builds are replaced by the local sync job, so a manual check kicks it instead of reading the upstream feed.
+  private async startForkSyncFromMenu(): Promise<void> {
+    if (this.forkSyncStartInFlight) {
+      return
+    }
+    this.forkSyncStartInFlight = true
+    this.sendStatus({ state: 'checking', userInitiated: true })
+    try {
+      const result = await startForkSyncJob()
+      if (result.ok) {
+        this.sendStatus({
+          state: 'not-available',
+          userInitiated: true,
+          message: SELF_MANAGED_SYNC_STARTED_MESSAGE
+        })
+      } else {
+        this.sendErrorStatus(result.message, true)
+      }
+    } finally {
+      this.forkSyncStartInFlight = false
+    }
+  }
+
   downloadUpdate(): void {
+    if (isSelfManagedUpdates()) {
+      return
+    }
     super.downloadUpdate()
   }
 
   quitAndInstall(): void {
+    if (isSelfManagedUpdates()) {
+      return
+    }
     super.quitAndInstall()
   }
 
@@ -133,6 +176,10 @@ export class UpdaterSetup extends UpdaterDownloadInstall {
         { level: 'warn', message: 'Supervised serve update did not complete' }
       )
       this.sendErrorStatus(`The server update did not complete: ${serveHandoffFailure}`, true)
+    }
+
+    if (isSelfManagedUpdates()) {
+      return
     }
 
     if (!app.isPackaged && !is.dev) {
