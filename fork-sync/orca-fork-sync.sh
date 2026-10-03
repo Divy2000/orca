@@ -276,7 +276,7 @@ esac
 [[ -d "$built_app" ]] || fail "build produced no Orca.app at $built_app"
 codesign --verify --deep --strict "$built_app" || fail "built app signature invalid"
 
-git fetch --quiet origin || fail "could not fetch origin before pushing $current"
+git fetch --quiet --prune origin || fail "could not fetch origin before pushing $current"
 if git merge-base --is-ancestor HEAD "origin/$BRANCH"; then
   log "origin/$BRANCH already contains $current; nothing to push."
 else
