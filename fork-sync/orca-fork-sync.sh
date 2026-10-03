@@ -176,6 +176,8 @@ verify() {
   node --test fork-sync/compare-test-failures.test.mjs >&2 || return 1
   # Why: build:mac packages x64 and arm64, which needs both native variants installed.
   pnpm run install:release >&2 || return 1
+  # Why: build:mac bundles the mobile web client, which resolves React Native from mobile/'s own install.
+  (cd mobile && pnpm install --frozen-lockfile) >&2 || return 1
   pnpm run tc >&2 || return 1
   local baseline
   local fork_report="$STATE_DIR/fork-tests.json" retry_report="$STATE_DIR/fork-retry.json"
