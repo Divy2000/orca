@@ -80,7 +80,9 @@ async function terminal(
 type OrcadServe = { daemonPid: number; stop: () => Promise<void> }
 
 /** `orca serve` on orcad, as the T6-11 launcher runs it, on the host's own profile. */
-async function startOrcadServe(host: HeadlessPairedRuntimeHost): Promise<OrcadServe> {
+async function startOrcadServe(
+  host: Pick<HeadlessPairedRuntimeHost, 'env' | 'userDataDir'>
+): Promise<OrcadServe> {
   const child = spawnProcess({
     program: orcadRuntime!,
     args: [path.join(slotDir, 'orcad.js'), '--bind', '127.0.0.1', '--port', '0', '--json'],
@@ -120,6 +122,26 @@ async function startOrcadServe(host: HeadlessPairedRuntimeHost): Promise<OrcadSe
     }
   }
 }
+
+// Why: an SSH-managed orcad on this machine runs under ~/.orca, beside the desktop's own profile.
+test("Electron serve starts beside a live daemon another profile's orcad forked", async () => {
+  const other = cliServeProfile(scratch)
+  const orcad = await startOrcadServe(other)
+  try {
+    const host = await launchHeadlessPairedRuntimeHost({
+      pinnedServePort: true,
+      userDataParent: scratch
+    })
+    try {
+      expect(daemonPid(host.userDataDir)).not.toBe(orcad.daemonPid)
+    } finally {
+      await host.dispose()
+    }
+  } finally {
+    await orcad.stop()
+    await cleanupE2EDaemons(other.userDataDir)
+  }
+})
 
 test('a terminal survives Electron serve → orcad serve → Electron serve on one profile', async () => {
   const host = await launchHeadlessPairedRuntimeHost({
