@@ -61,10 +61,11 @@ fi
 trap '[[ "$(cat "$LOCK_FILE" 2>/dev/null)" == "$$" ]] && rm -f "$LOCK_FILE"' EXIT
 
 run_claude() {
-  local task="$1"
+  local task="$1" prompt
   log "Starting headless Claude session: $task"
-  (cd "$REPO" && claude -p --dangerously-skip-permissions --max-turns "$CLAUDE_MAX_TURNS" "$(cat <<EOF
-You are maintaining Divy's personal Orca fork at $REPO on branch $BRANCH.
+  # Why: a heredoc inside $(...) misparses quotes under macOS /bin/bash 3.2.
+  IFS= read -r -d '' prompt <<EOF || true
+You are maintaining the personal Orca fork at $REPO on branch $BRANCH.
 This branch is an upstream stable release plus personal patches (self-managed
 updater mode, cross-workspace pane splits, and other fork features). Follow
 AGENTS.md. pnpm is available as \`pnpm\`.
@@ -79,7 +80,7 @@ Rules:
   staged with \`git add\`.
 - When done, print a short summary of what you changed and why.
 EOF
-)") || return 1
+  (cd "$REPO" && claude -p --dangerously-skip-permissions --max-turns "$CLAUDE_MAX_TURNS" "$prompt") || return 1
 }
 
 wait_and_install() {
