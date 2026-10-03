@@ -119,33 +119,57 @@ wait_and_install() {
 # way the repo's test script does. The default reporter is kept alongside JSON
 # because unhandled errors only appear in its console summary.
 run_unit_tests() {
-  local report="$1" console_log="$2"; shift 2
-  node config/scripts/ensure-native-runtime.mjs --runtime=node >"$console_log" 2>&1 \
-    && pnpm exec vitest run --config config/vitest.config.ts \
+  local report="$1"; shift
+  local console_log="${report%.json}.log"
+  # Why: ORCA_BALANCE_UNIT_SHARDS changes which tests run, so both runs must agree on it.
+  NO_COLOR=1 node config/scripts/ensure-native-runtime.mjs --runtime=node >"$console_log" 2>&1 \
+    && env -u ORCA_BALANCE_UNIT_SHARDS -u FORCE_COLOR NO_COLOR=1 pnpm exec vitest run --config config/vitest.config.ts \
       --reporter=json --reporter=default --outputFile.json="$report" "$@" >>"$console_log" 2>&1
-}
-
-unhandled_error_count() {
-  local count
-  count="$(grep -oE 'Vitest caught [0-9]+ unhandled error' "$1" | grep -oE '[0-9]+' | head -1 || true)"
-  echo "${count:-0}"
 }
 
 # Why: the upstream release itself fails some tests on this machine (CI-only
 # fixtures, local toolchain differences), so the gate is "the fork adds no
 # failures the same release does not already have", not "everything passes".
-# The baseline is rebuilt every run so it reflects the same toolchain as the fork run.
+# The baseline is reused only while every input that can change its outcome
+# (release, lockfile, Node, macOS, CPU) is identical.
+upstream_baseline_key() {
+  printf '%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest:pnpm-lock.yaml")" \
+    "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" | shasum -a 256 | cut -c1-16
+}
+
 upstream_report() {
-  local report="$STATE_DIR/upstream-tests.json"
-  rm -f "$report"
-  log "Running upstream $latest test suite for the failure baseline."
-  git worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
-  git worktree add --force --detach "$UPSTREAM_WORKTREE" "$latest" >/dev/null
-  (cd "$UPSTREAM_WORKTREE" && pnpm install --frozen-lockfile >/dev/null 2>&1 \
-    && { run_unit_tests "$report" "$STATE_DIR/upstream-tests.log" || true; })
-  git worktree remove --force "$UPSTREAM_WORKTREE"
-  [[ -s "$report" ]] || return 1
-  echo "$report"
+  local key report confirm
+  key="$(upstream_baseline_key)"
+  report="$STATE_DIR/upstream-tests-$key.json"
+  confirm="$STATE_DIR/upstream-confirm-$key.json"
+  if [[ -s "$report" && -s "${report%.json}.log" && -s "$confirm" && -s "${confirm%.json}.log" ]]; then
+    log "Reusing upstream $latest test baseline ($key)."
+  else
+    rm -f "$STATE_DIR"/upstream-tests-*.json "$STATE_DIR"/upstream-tests-*.log \
+      "$STATE_DIR"/upstream-confirm-*.json "$STATE_DIR"/upstream-confirm-*.log
+    log "Running upstream $latest test suite for the failure baseline ($key)."
+    git worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
+    git worktree add --force --detach "$UPSTREAM_WORKTREE" "$latest" >/dev/null
+    (
+      cd "$UPSTREAM_WORKTREE" && pnpm install --frozen-lockfile >/dev/null 2>&1 || exit 1
+      run_unit_tests "$report" || true
+      [[ -s "$report" ]] || exit 1
+      # Re-run upstream's failing files so only reproducible failures enter the baseline.
+      local failing=()
+      while IFS= read -r file; do failing+=("$file"); done < <(node "$COMPARE" --files "$report" "$UPSTREAM_WORKTREE")
+      if (( ${#failing[@]} > 0 )); then
+        log "Confirming ${#failing[@]} failing upstream file(s)."
+        run_unit_tests "$confirm" "${failing[@]}" || true
+      else
+        # Nothing re-runnable: confirm nothing, so unattributed upstream errors never mask fork ones.
+        echo '{"testResults":[]}' > "$confirm"
+        echo 'no upstream failures to confirm' > "${confirm%.json}.log"
+      fi
+    ) || true
+    git worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
+    [[ -s "$report" && -s "${report%.json}.log" && -s "$confirm" && -s "${confirm%.json}.log" ]] || return 1
+  fi
+  echo "$report,$confirm"
 }
 
 verify() {
@@ -156,30 +180,23 @@ verify() {
   local baseline
   local fork_report="$STATE_DIR/fork-tests.json" retry_report="$STATE_DIR/fork-retry.json"
   baseline="$(upstream_report)" || { log "Could not produce the upstream test report."; return 1; }
-  rm -f "$fork_report" "$retry_report"
-  run_unit_tests "$fork_report" "$STATE_DIR/fork-tests.log" || true
+  rm -f "$fork_report" "$retry_report" "${fork_report%.json}.log" "${retry_report%.json}.log"
+  run_unit_tests "$fork_report" || true
   [[ -s "$fork_report" ]] || { log "Fork test run produced no report."; return 1; }
-
-  local upstream_unhandled fork_unhandled
-  upstream_unhandled="$(unhandled_error_count "$STATE_DIR/upstream-tests.log")"
-  fork_unhandled="$(unhandled_error_count "$STATE_DIR/fork-tests.log")"
-  if (( fork_unhandled > upstream_unhandled )); then
-    log "Fork run has $fork_unhandled unhandled errors vs $upstream_unhandled upstream (see $STATE_DIR/fork-tests.log)."
-    echo "unhandled errors: fork $fork_unhandled, upstream $upstream_unhandled (see $STATE_DIR/fork-tests.log)" > "$INTRODUCED_FILE"
-    return 1
-  fi
-
   if node "$COMPARE" "$baseline" "$UPSTREAM_WORKTREE" "$fork_report" "$REPO" > "$INTRODUCED_FILE"; then
     return 0
   fi
   # Re-run only the affected files once so a flaky test cannot block the sync.
+  # Unhandled errors with no test file cannot be retried and fail the gate.
   local files=()
-  while IFS= read -r file; do files+=("$file"); done < <(sed 's/ > .*//' "$INTRODUCED_FILE" | sort -u)
-  log "Re-running ${#files[@]} file(s) with fork-only failures."
-  run_unit_tests "$retry_report" "$STATE_DIR/fork-retry.log" "${files[@]}" || true
-  if [[ -s "$retry_report" ]] \
-    && node "$COMPARE" "$baseline" "$UPSTREAM_WORKTREE" "$retry_report" "$REPO" "${files[@]}" > "$INTRODUCED_FILE"; then
-    return 0
+  while IFS= read -r file; do files+=("$file"); done < <(grep -v '^(unhandled error without a test file)' "$INTRODUCED_FILE" | sed 's/ > .*//' | sort -u)
+  if (( ${#files[@]} > 0 )) && ! grep -q '^(unhandled error without a test file)' "$INTRODUCED_FILE"; then
+    log "Re-running ${#files[@]} file(s) with fork-only failures."
+    run_unit_tests "$retry_report" "${files[@]}" || true
+    if [[ -s "$retry_report" ]] \
+      && node "$COMPARE" "$baseline" "$UPSTREAM_WORKTREE" "$retry_report" "$REPO" "${files[@]}" > "$INTRODUCED_FILE"; then
+      return 0
+    fi
   fi
   log "Fork-only test failures:"; cat "$INTRODUCED_FILE" >&2
   return 1
@@ -251,7 +268,7 @@ fi
 
 log "Building signed macOS app for $current."
 rm -rf dist
-ORCA_SELF_MANAGED_UPDATES=1 CSC_NAME="$SIGN_IDENTITY" pnpm run build:mac >&2 || fail "build failed for $current"
+ORCA_SELF_MANAGED_UPDATES=1 ORCA_MAC_LOCAL_APP_ONLY=1 CSC_NAME="$SIGN_IDENTITY" pnpm run build:mac >&2 || fail "build failed for $current"
 case "$(uname -m)" in
   arm64) built_app="dist/mac-arm64/Orca.app" ;;
   *) built_app="dist/mac/Orca.app" ;;

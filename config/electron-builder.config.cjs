@@ -49,6 +49,8 @@ const isWinAdhoc = process.env.ORCA_WIN_ADHOC === '1'
 const isWinDevChannel = isWinHourly || isWinDaily || isWinAdhoc
 const isMacRelease = process.env.ORCA_MAC_RELEASE === '1' || isMacHourly || isMacDaily || isMacAdhoc
 const isLinuxArm64Release = process.env.ORCA_LINUX_ARM64_RELEASE === '1'
+// Why: the personal fork's weekly sync installs only the host-arch .app, so dmg/zip for both arches is wasted work.
+const isMacLocalAppOnly = !isMacRelease && process.env.ORCA_MAC_LOCAL_APP_ONLY === '1'
 const localBuildVersion =
   isMacRelease || isWinDevChannel ? undefined : process.env.ORCA_LOCAL_BUILD_VERSION
 const isHourlyChannel = isMacHourly || isWinHourly
@@ -570,16 +572,18 @@ module.exports = {
         to: 'MacOS/orca-keyboard-layout'
       }
     ],
-    target: [
-      {
-        target: 'dmg',
-        arch: ['x64', 'arm64']
-      },
-      {
-        target: 'zip',
-        arch: ['x64', 'arm64']
-      }
-    ]
+    target: isMacLocalAppOnly
+      ? [{ target: 'dir', arch: [process.arch] }]
+      : [
+          {
+            target: 'dmg',
+            arch: ['x64', 'arm64']
+          },
+          {
+            target: 'zip',
+            arch: ['x64', 'arm64']
+          }
+        ]
   },
   // Why: release builds should fail if signing is unavailable instead of
   // silently downgrading to ad-hoc artifacts that look shippable in CI logs.
