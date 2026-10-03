@@ -157,6 +157,30 @@ function createStartupDiagnosticsBanner(chunkName: string): string {
         traceLineCount += 1
         writeLine(message)
       }
+      const wipWrap = (target, label) => {
+        if (!target) return
+        const names = new Set()
+        for (let o = target; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+          for (const name of Object.getOwnPropertyNames(o)) names.add(name)
+        }
+        for (const name of names) {
+          if (name === 'constructor' || /^[A-Z_]/.test(name) || name === 'on' || name === 'once' || name === 'emit' || name === 'removeListener' || name === 'off' || name === 'addListener') continue
+          let fn
+          try { fn = target[name] } catch { continue }
+          if (typeof fn !== 'function') continue
+          try {
+            target[name] = function (...args) {
+              writeTraceLine('[bootstrap] wip-call ' + label + '.' + name + ' ' + safeJson(String(args[0]).slice(0, 200)))
+              return Reflect.apply(fn, this, args)
+            }
+          } catch {}
+        }
+      }
+      try {
+        const fs = require('node:fs')
+        wipWrap(fs, 'fs')
+        wipWrap(require('node:child_process'), 'child_process')
+      } catch {}
       Module._load = function (request, parent, isMain) {
         const parentName = parent && parent.filename ? parent.filename : null
         writeTraceLine('[bootstrap] require-start request=' + safeJson(request) + ' parent=' + safeJson(parentName) + ' isMain=' + safeJson(Boolean(isMain)))
@@ -166,6 +190,11 @@ function createStartupDiagnosticsBanner(chunkName: string): string {
         try {
           const result = Reflect.apply(originalLoad, this, arguments)
           writeTraceLine('[bootstrap] require-ok request=' + safeJson(request))
+          if (request === 'electron' && result && !globalThis.__ORCA_WIP_ELECTRON_WRAPPED__) {
+            globalThis.__ORCA_WIP_ELECTRON_WRAPPED__ = true
+            wipWrap(result.app, 'app')
+            wipWrap(result.app && result.app.commandLine, 'app.commandLine')
+          }
           return result
         } catch (error) {
           const message = error && typeof error === 'object' && 'stack' in error ? error.stack : error

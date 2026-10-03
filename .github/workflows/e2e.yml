@@ -594,6 +594,7 @@ jobs:
           # A launch that dies before its window prints this trail into Playwright's call log.
           NODE_OPTIONS: --max-old-space-size=4096 --enable-source-maps
           ORCA_STARTUP_DIAGNOSTICS: trace
+          ORCA_STARTUP_DIAGNOSTICS_TRACE_LIMIT: '400000'
           ORCA_STARTUP_DIAGNOSTICS_FILE: ${{ github.workspace }}\test-results\startup-trace.log
           ELECTRON_ENABLE_LOGGING: '1'
           ELECTRON_ENABLE_STACK_DUMPING: '1'
