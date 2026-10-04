@@ -83,10 +83,27 @@ EOF
   (cd "$REPO" && claude -p --dangerously-skip-permissions --max-turns "$CLAUDE_MAX_TURNS" "$prompt") || return 1
 }
 
+# Why: pgrep cannot see the Orca process on this machine (it once reported Orca
+# closed while it ran), and ps comm is argv[0], so ask LaunchServices by bundle
+# id and also match any Orca main executable; an unreadable process list counts as running.
+orca_running() {
+  local asn
+  for asn in $(lsappinfo find bundleID=com.stablyai.orca 2>/dev/null | grep -oE 'ASN:[^:]+:'); do
+    # Only the installed copy matters; dev builds share the bundle id.
+    [[ "$(lsappinfo info -only bundlepath "$asn" 2>/dev/null)" == "\"LSBundlePath\"=\"$APP_PATH\"" ]] && return 0
+  done
+  local processes
+  processes="$(ps -axo command=)" || return 0
+  # Anchored: the terminal daemon outlives the app and carries this path as an argument.
+  awk -v exe="$APP_PATH/Contents/MacOS/Orca" \
+    'index($0, exe) == 1 && (length($0) == length(exe) || substr($0, length(exe) + 1, 1) == " ") { found = 1 }
+     END { exit !found }' <<<"$processes"
+}
+
 wait_and_install() {
   local staged="$1" commit="$2"
   local notified=false deadline=$(( $(date +%s) + INSTALL_WAIT_SECONDS ))
-  while pgrep -f "^$APP_PATH/Contents/MacOS/Orca" >/dev/null; do
+  while orca_running; do
     if [[ "$notified" == false ]]; then
       notified=true
       notify "Orca update ready" "Quit Orca to install the fork build ($commit). It reopens automatically."
