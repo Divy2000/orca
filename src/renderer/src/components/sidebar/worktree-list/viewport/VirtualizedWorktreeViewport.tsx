@@ -214,8 +214,6 @@ export const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktr
     markScrollMovement,
     selectedWorktreeIds: props.selectedWorktreeIds,
     selectedWorktrees: props.selectedWorktrees,
-    workspaceBoardOpen: props.workspaceBoardOpen,
-    onWorkspaceBoardDragPreviewStart: props.onWorkspaceBoardDragPreviewStart,
     onWorkspaceBoardDragPreviewCommit: props.onWorkspaceBoardDragPreviewCommit,
     onDropWorktreesOnWorkspaceBoard: props.onDropWorktreesOnWorkspaceBoard,
     shouldShowWorkspaceBoardDropIndicator: props.shouldShowWorkspaceBoardDropIndicator

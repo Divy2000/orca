@@ -30,6 +30,7 @@ import { canDropTabIntoPaneBody, isTabDragData, type TabDragItemData } from './t
 import { useTabDragGestureLifecycle } from './tab-drag-gesture-lifecycle'
 import { useTabDragHoverPreview, type HoveredTabDropTarget } from './tab-drag-hover-preview'
 import { commitTabDragDrop } from './tab-drag-drop-commit'
+import { useTabDragPaneMix } from './use-tab-drag-pane-mix'
 
 export type { HoveredTabInsertion }
 export type { HoveredTabDropTarget }
@@ -66,6 +67,13 @@ export function canDropTabForPaneColumnSplit(args: {
 const collisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args)
   return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(args)
+}
+
+function readShiftKey(event: Event | null): boolean {
+  // Why typeof: dnd-kit leaves activatorEvent unset for synthetic activations.
+  return (
+    typeof event === 'object' && event !== null && 'shiftKey' in event && event.shiftKey === true
+  )
 }
 
 export function getTabPaneBodyDroppableId(groupId: string): UniqueIdentifier {
@@ -107,6 +115,7 @@ export function useTabDragSplit({
   const dragGeometryRef = useRef<TabGroupPanelGeometrySnapshot | null>(null)
   const clearDragStateRef = useRef<() => void>(() => {})
   const tabInsertion = useHoveredTabInsertion(isTabDragData, getDragPointer)
+  const paneMix = useTabDragPaneMix()
   const {
     acquireWebviewDragPassthrough,
     installMissedEndFallback,
@@ -145,8 +154,10 @@ export function useTabDragSplit({
     tabInsertion.clear()
     preDragActivationSnapshotRef.current = null
     dragGeometryRef.current = null
+    paneMix.clear()
   }, [
     clearHoveredDropTarget,
+    paneMix,
     releaseMissedEndFallback,
     releaseWebviewDragPassthrough,
     tabInsertion
@@ -198,13 +209,14 @@ export function useTabDragSplit({
       }
 
       setActiveDrag(dragData)
+      paneMix.begin(dragData, { shiftKey: readShiftKey(event.activatorEvent) })
       tabDragActiveRef.current = true
       installMissedEndFallback()
       dragGeometryRef.current = captureTabGroupPanelGeometrySnapshot(worktreeId)
       preDragActivationSnapshotRef.current = captureTabDragActivationSnapshot(worktreeId)
       acquireWebviewDragPassthrough()
     },
-    [acquireWebviewDragPassthrough, clearDragState, installMissedEndFallback, worktreeId]
+    [acquireWebviewDragPassthrough, clearDragState, installMissedEndFallback, paneMix, worktreeId]
   )
 
   const onDragMove = useCallback(
@@ -213,9 +225,14 @@ export function useTabDragSplit({
       if (!tabDragActiveRef.current) {
         return
       }
+      if (paneMix.update(event)) {
+        clearHoveredDropTarget()
+        tabInsertion.clear()
+        return
+      }
       handleDragUpdate(event)
     },
-    [handleDragUpdate]
+    [clearHoveredDropTarget, handleDragUpdate, paneMix, tabInsertion]
   )
 
   const onDragOver = useCallback((_event: DragOverEvent) => {
@@ -229,6 +246,13 @@ export function useTabDragSplit({
         finishDrag(true)
         return
       }
+      const paneMixDrop = paneMix.resolveDrop(event)
+      if (paneMixDrop) {
+        // Why first: restoring the pre-drag activation after the move would revive a closed tab.
+        finishDrag(true)
+        paneMixDrop()
+        return
+      }
       commitTabDragDrop({
         event,
         worktreeId,
@@ -238,7 +262,7 @@ export function useTabDragSplit({
         finishDrag
       })
     },
-    [dragGeometryRef, dropUnifiedTab, finishDrag, reorderUnifiedTabs, worktreeId]
+    [dragGeometryRef, dropUnifiedTab, finishDrag, paneMix, reorderUnifiedTabs, worktreeId]
   )
 
   // Why: dnd-kit fires onDragCancel (not onDragEnd) when the user presses

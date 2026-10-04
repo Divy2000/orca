@@ -2,6 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { act, createElement } from 'react'
+import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tab, TabGroup, TabGroupLayoutNode } from '../../../../shared/tab-types'
@@ -20,6 +21,16 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../browser-pane/host-guest/webview-registry', () => ({
   acquireWebviewsDragPassthrough: vi.fn(() => vi.fn())
+}))
+
+const paneMix = vi.hoisted(() => ({ splitTarget: vi.fn(), moveIntoSplit: vi.fn() }))
+
+vi.mock('../terminal-pane/terminal-pane-split-drop-target', () => ({
+  resolveTerminalPaneSplitDropTarget: paneMix.splitTarget
+}))
+
+vi.mock('../terminal-pane/terminal-pane-move-action', () => ({
+  requestTerminalPaneMoveIntoSplit: paneMix.moveIntoSplit
 }))
 
 vi.mock('../../runtime/web-runtime-session', () => ({
@@ -425,6 +436,77 @@ describe('useTabDragSplit', () => {
     expect(dropUnifiedTab).toHaveBeenCalledWith('tab-1', {
       groupId: 'group-2',
       splitDirection: 'right'
+    })
+  })
+
+  describe('Shift-drag of a terminal tab onto a pane', () => {
+    const LEAF = '11111111-1111-4111-8111-111111111111'
+    const PANE_TARGET = {
+      kind: 'pane-split',
+      id: 'pane-target',
+      paneKey: 'term-2:22222222-2222-4222-8222-222222222222',
+      tabId: 'term-2',
+      zone: 'bottom',
+      overlayKind: 'area',
+      rect: rect({ left: 500, top: 300, width: 400, height: 300 })
+    }
+
+    function terminalDrag(): TabDragItemData {
+      return { ...makeDragData('group-1'), tabType: 'terminal', visibleTabId: 'term-1' }
+    }
+
+    function dragOntoPane(shiftKey: boolean): { dropUnifiedTab: ReturnType<typeof vi.fn> } {
+      addPanelGeometry(
+        'group-2',
+        rect({ left: 500, top: 0, width: 400, height: 600 }),
+        rect({ left: 500, top: 32, width: 400, height: 568 })
+      )
+      paneMix.splitTarget.mockReturnValue(PANE_TARGET)
+      const dropUnifiedTab = vi.fn<ReturnType<typeof useAppStore.getState>['dropUnifiedTab']>(
+        () => true
+      )
+      useAppStore.setState({
+        dropUnifiedTab,
+        terminalLayoutsByTabId: {
+          'term-1': {
+            root: { type: 'leaf', leafId: LEAF },
+            activeLeafId: LEAF,
+            expandedLeafId: null
+          }
+        }
+      })
+      const drag = renderDragHook()
+      const base = makeDragEvent(terminalDrag(), { x: 880, y: 300 })
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the drag handlers read only active data, the activator point and the delta.
+      const event = {
+        ...base,
+        activatorEvent: { ...base.activatorEvent, shiftKey }
+      } as unknown as DragStartEvent & DragMoveEvent & DragEndEvent
+      act(() => drag.onDragStart(event))
+      act(() => drag.onDragMove(event))
+      act(() => drag.onDragEnd(event))
+      return { dropUnifiedTab }
+    }
+
+    it('given Shift held, it mixes the tab’s pane into that pane’s split', () => {
+      const { dropUnifiedTab } = dragOntoPane(true)
+
+      expect(paneMix.moveIntoSplit).toHaveBeenCalledWith(
+        `term-1:${LEAF}`,
+        PANE_TARGET.paneKey,
+        'bottom'
+      )
+      expect(dropUnifiedTab).not.toHaveBeenCalled()
+    })
+
+    it('given a plain drag, it keeps moving the tab into the group split', () => {
+      const { dropUnifiedTab } = dragOntoPane(false)
+
+      expect(paneMix.moveIntoSplit).not.toHaveBeenCalled()
+      expect(dropUnifiedTab).toHaveBeenCalledWith('tab-1', {
+        groupId: 'group-2',
+        splitDirection: 'right'
+      })
     })
   })
 })

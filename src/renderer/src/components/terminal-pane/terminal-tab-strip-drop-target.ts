@@ -95,7 +95,7 @@ function resolveTabStripInsertion(args: {
   }
 }
 
-function getElementsFromPoint(clientX: number, clientY: number): Element[] {
+export function getElementsFromPoint(clientX: number, clientY: number): Element[] {
   if (typeof document === 'undefined') {
     return []
   }

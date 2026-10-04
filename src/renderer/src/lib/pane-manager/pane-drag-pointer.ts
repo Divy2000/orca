@@ -1,5 +1,6 @@
-import type { DropZone, ManagedPaneInternal, PaneExternalDropTarget } from './pane-manager-types'
+import type { ManagedPaneInternal } from './pane-manager-types'
 import type { DragReorderCallbacks, DragReorderState } from './pane-drag-reorder'
+import { positionDropOverlay, positionDropOverlayRect, resolveDropZone } from './pane-drop-zone'
 import {
   handlePaneDrop,
   hideDropOverlay,
@@ -184,7 +185,7 @@ function updateDropTarget(
     }
     state.currentDropTarget = null
     state.currentExternalDropTarget = externalTarget
-    positionExternalDropOverlay(overlay, externalTarget)
+    positionDropOverlayRect(overlay, externalTarget.rect, externalTarget.overlayKind)
     return
   }
 
@@ -226,40 +227,4 @@ function findDropTargetPane(
     }
   }
   return null
-}
-
-function resolveDropZone(clientX: number, clientY: number, rect: DOMRect): DropZone {
-  const relX = (clientX - rect.left) / rect.width
-  const relY = (clientY - rect.top) / rect.height
-  const distances = {
-    top: relY,
-    bottom: 1 - relY,
-    left: relX,
-    right: 1 - relX
-  } satisfies Record<DropZone, number>
-  return (Object.entries(distances).sort((a, b) => a[1] - b[1])[0]?.[0] ?? 'right') as DropZone
-}
-
-function positionDropOverlay(overlay: HTMLElement, rect: DOMRect, zone: DropZone): void {
-  overlay.style.display = ''
-  overlay.dataset.paneDropOverlayKind = 'area'
-  const scrollX = window.scrollX
-  const scrollY = window.scrollY
-  const halfWidth = rect.width / 2
-  const halfHeight = rect.height / 2
-
-  overlay.style.left = `${rect.left + scrollX + (zone === 'right' ? halfWidth : 0)}px`
-  overlay.style.top = `${rect.top + scrollY + (zone === 'bottom' ? halfHeight : 0)}px`
-  overlay.style.width = `${zone === 'left' || zone === 'right' ? halfWidth : rect.width}px`
-  overlay.style.height = `${zone === 'top' || zone === 'bottom' ? halfHeight : rect.height}px`
-}
-
-function positionExternalDropOverlay(overlay: HTMLElement, target: PaneExternalDropTarget): void {
-  const rect = target.rect
-  overlay.style.display = ''
-  overlay.dataset.paneDropOverlayKind = target.overlayKind ?? 'area'
-  overlay.style.left = `${rect.left + window.scrollX}px`
-  overlay.style.top = `${rect.top + window.scrollY}px`
-  overlay.style.width = `${rect.width}px`
-  overlay.style.height = `${rect.height}px`
 }

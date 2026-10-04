@@ -2,7 +2,6 @@ import { useCallback, useEffect } from 'react'
 import type React from 'react'
 import type { WorkspaceStatus, Worktree } from '../../../../../../shared/worktree/types'
 import { getWorktreeHostIdentity } from '../../../../../../shared/worktree/host-qualified-identity'
-import { hasWorkspaceKanbanSidebarDropBoard } from '../../workspace-kanban-sidebar-drop'
 import {
   createSidebarDragPreview,
   isSidebarPointerDragBlocked,
@@ -10,7 +9,6 @@ import {
 } from '../../worktree-sidebar-pointer-drag-dom'
 import { getWorktreeSidebarDragRectsForGroup } from '../../worktree-sidebar-drag-autoscroll'
 import { getWorktreeSidebarDragGrab } from '../../worktree-sidebar-drag-geometry'
-import { NOOP_WORKSPACE_BOARD_DRAG_PREVIEW_CALLBACK } from './drop-commit-context'
 import type {
   WorktreeDropCommitContext,
   WorktreeStatusDropAtIndexArgs
@@ -30,8 +28,6 @@ export function useWorktreePointerDrag(args: {
   markScrollMovement: () => void
   selectedWorktreeIds: ReadonlySet<string>
   selectedWorktrees: readonly Worktree[]
-  workspaceBoardOpen: boolean
-  onWorkspaceBoardDragPreviewStart: () => void
   onWorkspaceBoardDragPreviewCommit: () => void
   onDropWorktreesOnWorkspaceBoard: (dropArgs: WorktreeStatusDropAtIndexArgs) => void
   shouldShowWorkspaceBoardDropIndicator: (
@@ -47,8 +43,6 @@ export function useWorktreePointerDrag(args: {
     markScrollMovement,
     selectedWorktreeIds,
     selectedWorktrees,
-    workspaceBoardOpen,
-    onWorkspaceBoardDragPreviewStart,
     onWorkspaceBoardDragPreviewCommit,
     onDropWorktreesOnWorkspaceBoard,
     shouldShowWorkspaceBoardDropIndicator
@@ -69,8 +63,6 @@ export function useWorktreePointerDrag(args: {
     flushWorktreePointerDragFrame({
       drag,
       ctx,
-      workspaceBoardOpen,
-      onWorkspaceBoardDragPreviewStart,
       onWorkspaceBoardDragPreviewCommit,
       shouldShowWorkspaceBoardDropIndicator,
       setWorktreeDragState,
@@ -80,12 +72,10 @@ export function useWorktreePointerDrag(args: {
   }, [
     ctx,
     onWorkspaceBoardDragPreviewCommit,
-    onWorkspaceBoardDragPreviewStart,
     setDragOverStatus,
     setPinDragOver,
     setWorktreeDragState,
     shouldShowWorkspaceBoardDropIndicator,
-    workspaceBoardOpen,
     worktreePointerDragRef
   ])
 
@@ -169,17 +159,9 @@ export function useWorktreePointerDrag(args: {
       if (!sourceGroupKey || !container) {
         return
       }
+      // Why no lone-card gate: a single card can still go to a status, the pin area, a lineage
+      // parent or a terminal pane; each target validates itself on hover and release.
       const rects = getWorktreeSidebarDragRectsForGroup(container, sourceGroupKey)
-      const canPreviewWorkspaceBoardOnDrag =
-        !workspaceBoardOpen &&
-        onWorkspaceBoardDragPreviewStart !== NOOP_WORKSPACE_BOARD_DRAG_PREVIEW_CALLBACK
-      if (
-        rects.length <= 1 &&
-        !hasWorkspaceKanbanSidebarDropBoard() &&
-        !canPreviewWorkspaceBoardOnDrag
-      ) {
-        return
-      }
       const draggedIds =
         selectedWorktreeIds.has(getWorktreeHostIdentity(worktree)) && selectedWorktrees.length > 1
           ? selectedWorktrees.map((worktree) => worktree.id)
@@ -206,22 +188,13 @@ export function useWorktreePointerDrag(args: {
         preview: null,
         previewOffsetX: 0,
         previewOffsetY: 0,
-        workspaceBoardDragPreviewRequested: false,
         frameId: null,
         reorderIntent: null,
         latestBoardDropTarget: null,
         latestStatusDropTarget: null
       }
     },
-    [
-      onWorkspaceBoardDragPreviewStart,
-      scrollRef,
-      selectedWorktreeIds,
-      selectedWorktrees,
-      session,
-      workspaceBoardOpen,
-      worktreePointerDragRef
-    ]
+    [scrollRef, selectedWorktreeIds, selectedWorktrees, session, worktreePointerDragRef]
   )
 
   const handleWorktreeRowClickCapture = useCallback(

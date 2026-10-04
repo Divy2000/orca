@@ -15,6 +15,9 @@ import { lastEnteredDoneAt } from '@/components/dashboard/agent-finished-timesta
 import CacheTimer, { usePromptCacheCountdownForPane } from './CacheTimer'
 import { formatShortTimeAgo } from '@/lib/short-time-ago'
 import { agentVerdictDisplayMark } from '../../../../shared/agent-main-agent-verdict'
+import { writeTerminalSessionDragData } from '@/lib/terminal-session-drag-data'
+import { endTerminalSessionDrag } from '@/components/terminal-pane/terminal-session-drop'
+import { useIsLiveTerminalPaneKey } from '@/components/terminal-pane/terminal-pane-liveness'
 
 function getCompactAgentPrimary(
   agent: DashboardAgentRowData,
@@ -268,9 +271,15 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
     </>
   )
 
+  // Why: subagent rows have no pane of their own, and send-target mode owns the row's clicks.
+  const candidatePaneKey =
+    agent.rowSource !== 'subagent' && !sendTargetStatus ? agent.paneKey : null
+  const paneIsLive = useIsLiveTerminalPaneKey(candidatePaneKey)
+  const draggablePaneKey = paneIsLive ? candidatePaneKey : null
+
   return (
     <div
-      draggable={false}
+      draggable={draggablePaneKey !== null}
       className={cn(
         'compact-agent-row agent-disclosure-row group/compact-agent-row min-w-0 cursor-pointer rounded-sm px-1 text-[11px] leading-none',
         'text-muted-foreground worktree-agent-row-hover',
@@ -285,7 +294,23 @@ export const CompactAgentRow = React.memo(function CompactAgentRow({
       onClick={handleActivate}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
-      onDragStart={(e) => e.stopPropagation()}
+      onDragStart={(e) => {
+        e.stopPropagation()
+        if (draggablePaneKey) {
+          writeTerminalSessionDragData(e.dataTransfer, {
+            paneKey: draggablePaneKey,
+            worktreeId: agent.tab.worktreeId
+          })
+        }
+      }}
+      onDragEnd={
+        draggablePaneKey
+          ? (e) => {
+              e.stopPropagation()
+              endTerminalSessionDrag()
+            }
+          : undefined
+      }
       data-focused-agent-pane={isFocusedPane ? 'true' : undefined}
       data-agent-send-target={sendTargetStatus}
       role={agent.lineage ? 'treeitem' : undefined}

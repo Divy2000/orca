@@ -12,6 +12,9 @@ import { EventTime, ThreadAgentStateIndicator } from './activity-thread-controls
 import { ActivityThreadHoverCard } from './activity-thread-hover-card'
 import { activityThreadRowCopy } from './activity-thread-presentation'
 import type { AgentPaneThread } from './activity-thread-types'
+import { writeTerminalSessionDragData } from '@/lib/terminal-session-drag-data'
+import { endTerminalSessionDrag } from '@/components/terminal-pane/terminal-session-drop'
+import { useIsLiveTerminalPaneKey } from '@/components/terminal-pane/terminal-pane-liveness'
 
 function ActivityThreadRowAction({
   label,
@@ -83,6 +86,8 @@ export const ActivityThreadRow = React.memo(function ActivityThreadRow({
     activityThreadRowCopy(thread)
   const showMarkdownStatus = statusKind === 'message'
   const agentLabel = formatAgentTypeLabel(thread.agentType)
+  // Why: retained threads outlive their pane; only a pane still in a layout can move.
+  const draggable = useIsLiveTerminalPaneKey(thread.paneKey)
 
   return (
     <ActivityThreadHoverCard
@@ -95,6 +100,17 @@ export const ActivityThreadRow = React.memo(function ActivityThreadRow({
         data-worktree-card-surface="true"
         data-worktree-card-active={selected ? 'primary' : undefined}
         onClick={() => onSelect(thread)}
+        draggable={draggable}
+        onDragStart={
+          draggable
+            ? (event) =>
+                writeTerminalSessionDragData(event.dataTransfer, {
+                  paneKey: thread.paneKey,
+                  worktreeId: thread.worktree.id
+                })
+            : undefined
+        }
+        onDragEnd={draggable ? endTerminalSessionDrag : undefined}
         role="listitem"
         aria-label={taskTitle}
         aria-current={selected ? 'true' : undefined}

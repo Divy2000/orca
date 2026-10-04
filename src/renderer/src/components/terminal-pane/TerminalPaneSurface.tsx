@@ -25,6 +25,7 @@ import {
 import type { TerminalPaneController } from './use-terminal-pane-controller'
 import { useTerminalPaneHomeLabels } from './use-terminal-pane-home-labels'
 import { requestTerminalPaneSendHome } from './terminal-pane-send-home-action'
+import { useTerminalSessionDrop } from './use-terminal-session-drop'
 
 export function TerminalPaneSurface({
   controller
@@ -115,6 +116,7 @@ export function TerminalPaneSurface({
     worktreeId
   } = controller
   const paneHomeLabels = useTerminalPaneHomeLabels(tabId, worktreeId)
+  const sessionDrop = useTerminalSessionDrop()
   const menuLeafId =
     contextMenu.menuPaneId !== null ? managerRef.current?.getLeafId(contextMenu.menuPaneId) : null
 
@@ -133,6 +135,9 @@ export function TerminalPaneSurface({
         onMouseDownCapture={handlePrimarySelectionMiddleMouseDown}
         onAuxClickCapture={handlePrimarySelectionAuxClick}
         onDragOver={(event) => {
+          if (sessionDrop.onDragOver(event)) {
+            return
+          }
           if (
             event.dataTransfer.types.includes(WORKSPACE_FILE_PATH_MIME) ||
             event.dataTransfer.types.includes(WORKSPACE_FILE_PATHS_MIME)
@@ -141,6 +146,7 @@ export function TerminalPaneSurface({
             event.dataTransfer.dropEffect = 'copy'
           }
         }}
+        onDragLeave={sessionDrop.onDragLeave}
         onDrop={(event) => {
           if (
             !event.dataTransfer.types.includes(WORKSPACE_FILE_PATH_MIME) &&
