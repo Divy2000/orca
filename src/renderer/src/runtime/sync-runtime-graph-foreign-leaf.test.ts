@@ -5,7 +5,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RuntimeSyncWindowGraph } from '../../../shared/runtime-types'
 import type { AppState } from '../store/types'
-import type { TerminalLayoutSnapshot } from '../../../shared/terminal-tab-types'
+import type { PaneManager } from '@/lib/pane-manager/pane-manager'
+import type { TerminalLayoutSnapshot, TerminalTab } from '../../../shared/terminal-tab-types'
 
 vi.mock('@/components/terminal-pane/pty-dispatcher', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
@@ -30,6 +31,19 @@ const PTY_BY_LEAF: Record<string, string> = {
   [FOREIGN_LEAF]: 'pty-foreign'
 }
 
+function hostTab(): TerminalTab {
+  return {
+    id: TAB_ID,
+    ptyId: 'pty-native',
+    worktreeId: HOST,
+    title: 'shell',
+    customTitle: null,
+    color: null,
+    sortOrder: 0,
+    createdAt: 0
+  }
+}
+
 function hostState(): AppState {
   const layout: TerminalLayoutSnapshot = {
     root: {
@@ -46,9 +60,7 @@ function hostState(): AppState {
     }
   }
   return makeState({
-    tabsByWorktree: {
-      [HOST]: [{ id: TAB_ID, worktreeId: HOST, title: 'shell', ptyId: 'pty-native' }]
-    } as unknown as AppState['tabsByWorktree'],
+    tabsByWorktree: { [HOST]: [hostTab()] },
     terminalLayoutsByTabId: { [TAB_ID]: layout }
   })
 }
@@ -68,7 +80,8 @@ function registerHostTab(): () => void {
   return registerRuntimeTerminalTab({
     tabId: TAB_ID,
     worktreeId: HOST,
-    getManager: () => manager as never,
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: PaneManager has private fields and xterm/DOM-backed panes a node test cannot build; publication reads only the stubbed methods and pane id/leafId.
+    getManager: () => manager as unknown as PaneManager,
     getContainer: () => null,
     getPtyIdForPane: (paneId) => PTY_BY_LEAF[panes[paneId - 1]?.leafId ?? ''] ?? null,
     getTabWideAgentHintLeafId: () => null
@@ -77,7 +90,9 @@ function registerHostTab(): () => void {
 
 async function captureGraph(): Promise<RuntimeSyncWindowGraph> {
   vi.useFakeTimers()
-  const syncWindowGraph = vi.fn().mockResolvedValue(undefined)
+  const syncWindowGraph = vi
+    .fn<(graph: RuntimeSyncWindowGraph) => Promise<void>>()
+    .mockResolvedValue(undefined)
   vi.stubGlobal('window', { api: { runtime: { syncWindowGraph } } })
   vi.stubGlobal('HTMLElement', class HTMLElement {})
   setRuntimeGraphStoreStateGetter(hostState)
@@ -85,7 +100,11 @@ async function captureGraph(): Promise<RuntimeSyncWindowGraph> {
   await vi.advanceTimersByTimeAsync(20)
   await Promise.resolve()
   expect(syncWindowGraph).toHaveBeenCalledTimes(1)
-  return syncWindowGraph.mock.calls[0]?.[0] as RuntimeSyncWindowGraph
+  const graph = syncWindowGraph.mock.calls[0]?.[0]
+  if (!graph) {
+    throw new Error('Expected syncWindowGraph to receive a runtime graph')
+  }
+  return graph
 }
 
 function leafWorktrees(graph: RuntimeSyncWindowGraph): Record<string, string> {
@@ -114,7 +133,7 @@ describe('syncRuntimeGraph foreign leaves', () => {
   })
 
   it('given a parked host tab with a foreign pane then that leaf publishes its home', async () => {
-    vi.mocked(getEagerPtyBufferHandle).mockReturnValue({} as never)
+    vi.mocked(getEagerPtyBufferHandle).mockReturnValue({ flush: () => '', dispose: vi.fn() })
 
     const graph = await captureGraph()
 

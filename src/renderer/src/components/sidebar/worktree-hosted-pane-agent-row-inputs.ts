@@ -13,7 +13,7 @@ import {
 } from '@/lib/terminal-host-native-pane-inputs'
 
 export type WorktreeAgentRowTerminalInputs = {
-  tabs: TerminalTab[]
+  tabs: readonly TerminalTab[]
   ptyIdsByTabId: Record<string, string[]>
   runtimePaneTitlesByTabId: Record<string, Record<number, string>>
   terminalLayoutsByTabId: Record<string, TerminalLayoutSnapshot | undefined>
@@ -32,7 +32,7 @@ type HostedAgentRowInputState = Pick<
 
 export const EMPTY_HOSTED_AGENT_ROW_INPUTS: HostedAgentRowInputs = Object.freeze({
   homedLayouts: Object.freeze({}),
-  tabs: Object.freeze([]) as unknown as TerminalTab[],
+  tabs: Object.freeze([]),
   ptyIdsByTabId: Object.freeze({}),
   runtimePaneTitlesByTabId: Object.freeze({}),
   terminalLayoutsByTabId: Object.freeze({}),

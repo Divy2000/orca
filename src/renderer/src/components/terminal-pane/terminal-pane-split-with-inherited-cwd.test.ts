@@ -8,17 +8,18 @@ import type {
   TerminalLayoutSnapshot,
   TerminalLeafHome
 } from '../../../../shared/terminal-tab-types'
+import { isTerminalLeafId, type TerminalLeafId } from '../../../../shared/stable-pane-id'
 
-const mocks = vi.hoisted(() => ({
-  recordCreatedTerminalPaneSplit: vi.fn(),
-  resolveSplitCwd: vi.fn(),
-  splitWebRuntimeTerminal: vi.fn(),
-  storeState: {
-    terminalLayoutsByTabId: {} as Record<string, TerminalLayoutSnapshot>,
-    worktreesByRepo: {} as Record<string, { id: string; path: string }[]>,
-    setTabLayout: vi.fn()
+const mocks = vi.hoisted(() => {
+  const terminalLayoutsByTabId: Record<string, TerminalLayoutSnapshot> = {}
+  const worktreesByRepo: Record<string, { id: string; path: string }[]> = {}
+  return {
+    recordCreatedTerminalPaneSplit: vi.fn(),
+    resolveSplitCwd: vi.fn(),
+    splitWebRuntimeTerminal: vi.fn(),
+    storeState: { terminalLayoutsByTabId, worktreesByRepo, setTabLayout: vi.fn() }
   }
-}))
+})
 
 vi.mock('@/store', () => ({
   useAppStore: { getState: () => mocks.storeState }
@@ -38,6 +39,13 @@ vi.mock('./terminal-pane-split-completion', () => ({
 
 function makeManager(splitPane: ReturnType<typeof vi.fn>): PaneManager {
   return { splitPane } as unknown as PaneManager
+}
+
+function terminalLeafId(value: string): TerminalLeafId {
+  if (!isTerminalLeafId(value)) {
+    throw new Error(`Expected a terminal leaf UUID, got ${value}`)
+  }
+  return value
 }
 
 describe('splitTerminalPaneWithInheritedCwd', () => {
@@ -264,7 +272,7 @@ describe('splitTerminalPaneWithInheritedCwd', () => {
         paneTransports: new Map([[1, { getPtyId: () => 'pty-1' } as PtyTransport]]),
         paneCwdMap: new Map(),
         fallbackCwd: '/host',
-        pane: { id: 1, leafId: SOURCE_LEAF } as ManagedPane,
+        pane: { id: 1, leafId: terminalLeafId(SOURCE_LEAF) },
         direction: 'vertical',
         source: 'keyboard'
       })
@@ -284,7 +292,7 @@ describe('splitTerminalPaneWithInheritedCwd', () => {
         paneTransports: new Map(),
         paneCwdMap: new Map([[1, { cwd: '/home-worktree/src', confirmed: true }]]),
         fallbackCwd: '/host',
-        pane: { id: 1, leafId: SOURCE_LEAF } as ManagedPane,
+        pane: { id: 1, leafId: terminalLeafId(SOURCE_LEAF) },
         direction: 'horizontal',
         source: 'context_menu'
       })

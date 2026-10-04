@@ -199,7 +199,7 @@ describe('palette live status', () => {
           }
         }
       }
-    } as Partial<AppState>)
+    })
     await act(async () => {
       testRoot.render(
         <PaletteLiveStatusProvider active>

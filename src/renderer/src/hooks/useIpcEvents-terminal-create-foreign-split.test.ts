@@ -41,12 +41,12 @@ describe('runtime split reveal of a pane hosted for another workspace', () => {
     expect(replyTerminalCreate).toHaveBeenCalledWith(
       expect.objectContaining({ requestId: 'req-foreign-split', tabId: 'host-tab' })
     )
-    const layout = storeState.terminalLayoutsByTabId['host-tab'] as {
-      homeByLeafId?: Record<string, unknown>
-      ptyIdsByLeafId?: Record<string, string>
-    }
-    expect(layout.ptyIdsByLeafId?.[NEW_LEAF]).toBe('pty-split')
-    expect(layout.homeByLeafId?.[NEW_LEAF]).toEqual({ ...sourceHome, sessionLeafId: NEW_LEAF })
+    const layout = storeState.terminalLayoutsByTabId['host-tab']
+    expect(layout).toHaveProperty(['ptyIdsByLeafId', NEW_LEAF], 'pty-split')
+    expect(layout).toHaveProperty(['homeByLeafId', NEW_LEAF], {
+      ...sourceHome,
+      sessionLeafId: NEW_LEAF
+    })
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'orca-split-terminal-pane',

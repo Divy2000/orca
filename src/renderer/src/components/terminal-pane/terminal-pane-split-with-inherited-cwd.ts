@@ -16,7 +16,7 @@ export function splitTerminalPaneWithInheritedCwd(args: {
   paneTransports: Map<number, PtyTransport>
   paneCwdMap: PaneCwdMap
   fallbackCwd: string
-  pane: ManagedPane
+  pane: Pick<ManagedPane, 'id' | 'leafId'>
   direction: 'vertical' | 'horizontal'
   source: TerminalPaneSplitSource
 }): void {

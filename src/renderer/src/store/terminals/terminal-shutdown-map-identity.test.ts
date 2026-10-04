@@ -116,7 +116,7 @@ describe('terminal shutdown map identity', () => {
       tabsByWorktree: { [WORKTREE]: [{ ...tab, title: 'Terminal 1' }] },
       runtimePaneTitlesByTabId: { [TAB_ID]: { 2: '⠋ Codex' } },
       runtimePaneTitleLeafIdsByTabId: { [TAB_ID]: { 2: 'leaf-b' }, 'tab-other': { 1: 'leaf-o' } }
-    } as unknown as Partial<AppState>)
+    })
 
     const kept = commit(before, [], true)
     const dropped = commit(before, [], false)

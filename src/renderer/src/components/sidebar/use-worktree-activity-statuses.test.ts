@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { shallow } from 'zustand/shallow'
+import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import { selectWorktreeActivityStatuses } from './use-worktree-activity-statuses'
 
 type StatusState = Parameters<typeof selectWorktreeActivityStatuses>[0]
@@ -50,13 +51,26 @@ describe('selectWorktreeActivityStatuses with a pane hosted for another workspac
   const W2 = 'repo::/w2'
   const FOREIGN_LEAF = '22222222-2222-4222-8222-222222222222'
 
+  function makeShellTab(id: string, worktreeId: string): TerminalTab {
+    return {
+      id,
+      ptyId: null,
+      worktreeId,
+      title: 'zsh',
+      customTitle: null,
+      color: null,
+      sortOrder: 0,
+      createdAt: 0
+    }
+  }
+
   function hostedShellState(withHome: boolean): StatusState {
     return {
       ...makeStatusState(),
       tabsByWorktree: {
         [W1]: [],
-        [W2]: [{ id: 'host-tab', title: 'zsh' }]
-      } as unknown as StatusState['tabsByWorktree'],
+        [W2]: [makeShellTab('host-tab', W2)]
+      },
       ptyIdsByTabId: { 'host-tab': ['pty-foreign'] },
       terminalLayoutsByTabId: {
         'host-tab': {

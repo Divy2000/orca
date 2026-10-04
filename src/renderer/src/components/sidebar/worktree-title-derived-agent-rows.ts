@@ -40,7 +40,7 @@ const EMPTY_TERMINAL_LAYOUTS: Record<string, TerminalLayoutSnapshot | undefined>
 const EMPTY_PANE_FOREGROUND: Record<string, TitleDerivedPaneForeground> = {}
 
 export function buildTitleDerivedAgentRows(args: {
-  tabs: TerminalTab[]
+  tabs: readonly TerminalTab[]
   runtimePaneTitlesByTabId?: Record<string, Record<number, string>>
   runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string>>
   ptyIdsByTabId?: Record<string, string[]>
