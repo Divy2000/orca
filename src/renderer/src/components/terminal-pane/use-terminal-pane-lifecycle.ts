@@ -17,9 +17,10 @@ import { useTerminalPaneMountLifecycle } from './use-terminal-pane-mount-lifecyc
 import { useTerminalPaneLifecycleRefs } from './use-terminal-pane-lifecycle-refs'
 import { useAppStore } from '@/store'
 import {
-  wakeHibernatedPanesForWorktree,
-  type WakeHibernatedAgentsWorktreeEventDetail
-} from './terminal-pane-hibernated-wake'
+  WAKE_HIBERNATED_AGENTS_WORKTREE_EVENT,
+  type WakeHibernatedAgentsWorktreeDetail
+} from '@/constants/terminal'
+import { wakeHibernatedPanesForWorktree } from './terminal-pane-hibernated-wake'
 
 export {
   applyTerminalScrollbackRowsToMountedPanes,
@@ -58,7 +59,7 @@ export function useTerminalPaneLifecycle(deps: UseTerminalPaneLifecycleDeps): vo
 
   useEffect(() => {
     const onWakeHibernatedAgents = (event: Event): void => {
-      const detail = (event as CustomEvent<WakeHibernatedAgentsWorktreeEventDetail>).detail
+      const detail = (event as CustomEvent<WakeHibernatedAgentsWorktreeDetail>).detail
       if (!detail) {
         return
       }
@@ -70,9 +71,9 @@ export function useTerminalPaneLifecycle(deps: UseTerminalPaneLifecycleDeps): vo
         bindings: deps.panePtyBindingsRef.current
       })
     }
-    window.addEventListener('orca:wake-hibernated-agents-worktree', onWakeHibernatedAgents)
+    window.addEventListener(WAKE_HIBERNATED_AGENTS_WORKTREE_EVENT, onWakeHibernatedAgents)
     return () =>
-      window.removeEventListener('orca:wake-hibernated-agents-worktree', onWakeHibernatedAgents)
+      window.removeEventListener(WAKE_HIBERNATED_AGENTS_WORKTREE_EVENT, onWakeHibernatedAgents)
   }, [deps.worktreeId, deps.tabId, deps.managerRef, deps.panePtyBindingsRef])
 
   useEffect(() => {

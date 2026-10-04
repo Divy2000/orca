@@ -1,11 +1,7 @@
 import type { IDisposable } from '@xterm/xterm'
 import type { TerminalLayoutSnapshot } from '../../../../shared/terminal-tab-types'
 import { resolveTerminalLeafHomeWorktreeId } from '../../../../shared/terminal-pane-home'
-
-export type WakeHibernatedAgentsWorktreeEventDetail = {
-  worktreeId: string
-  wokenClaimKeys?: Set<string>
-}
+import type { WakeHibernatedAgentsWorktreeDetail } from '@/constants/terminal'
 
 type WakeableBinding = IDisposable & {
   wakeHibernatedAgentIfArmed?: (claimedProviderSessions?: Set<string>) => string | null
@@ -13,7 +9,7 @@ type WakeableBinding = IDisposable & {
 
 /** Wakes this tab's armed panes that belong to `detail.worktreeId`, foreign panes by their home. */
 export function wakeHibernatedPanesForWorktree(args: {
-  detail: WakeHibernatedAgentsWorktreeEventDetail
+  detail: WakeHibernatedAgentsWorktreeDetail
   tabWorktreeId: string
   layout: TerminalLayoutSnapshot | undefined
   getLeafId: (paneId: number) => string | null
