@@ -228,6 +228,11 @@
   pointer-events: none;
 }
 
+/* Header controls would show through the translucent overlay and read as drop targets. */
+body:has(> .pane-drop-overlay[data-pane-drop-visible]) .pane-title-actions {
+  visibility: hidden;
+}
+
 .pane-drop-overlay[data-pane-drop-overlay-kind='insertion'] {
   background: var(--chart-2);
   border: 0;
@@ -363,6 +368,23 @@
   text-align: left;
   cursor: pointer;
   line-height: var(--orca-pane-title-height);
+}
+
+/* Names the workspace a hosted pane belongs to; one size below the title so the title stays primary. */
+.pane-title-home-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: var(--orca-pane-title-height);
+  color: var(--orca-pane-title-fg);
+}
+
+.pane-title-home-label + .pane-title-text {
+  margin-left: 8px;
 }
 
 .pane-title-text:focus-visible {

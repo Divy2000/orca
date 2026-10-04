@@ -39,6 +39,7 @@ export function useTerminalPaneTitleEffects(controller: TerminalPaneCloseControl
     isVisible,
     managerRef,
     paneCount,
+    paneHomeLabels,
     paneLayoutRevision,
     paneTitles,
     paneTitlesRef,
@@ -97,7 +98,8 @@ export function useTerminalPaneTitleEffects(controller: TerminalPaneCloseControl
       panes: manager.getPanes(),
       paneTitles,
       renamingPaneId,
-      sessionRestoredBannerPaneIds
+      sessionRestoredBannerPaneIds,
+      homeLabeledLeafIds: new Set(Object.keys(paneHomeLabels))
     })
     if (needsFit && (isVisible || shouldMeasureHiddenStartup)) {
       fitPanes(manager)
@@ -105,6 +107,7 @@ export function useTerminalPaneTitleEffects(controller: TerminalPaneCloseControl
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Preserve the pre-split dependency contract.
   }, [
     paneCount,
+    paneHomeLabels,
     paneLayoutRevision,
     paneTitles,
     renamingPaneId,

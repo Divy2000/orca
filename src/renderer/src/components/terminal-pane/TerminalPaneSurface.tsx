@@ -23,7 +23,6 @@ import {
   TerminalPaneSshReconnectPortals
 } from './TerminalPaneRuntimePortals'
 import type { TerminalPaneController } from './use-terminal-pane-controller'
-import { useTerminalPaneHomeLabels } from './use-terminal-pane-home-labels'
 import { requestTerminalPaneSendHome } from './terminal-pane-send-home-action'
 import { useTerminalSessionDrop } from './use-terminal-session-drop'
 
@@ -113,9 +112,9 @@ export function TerminalPaneSurface({
     titleUsesLightSurface,
     visibleQuickCommandHosts,
     visibleTerminalError,
-    worktreeId
+    worktreeId,
+    paneHomeLabels
   } = controller
-  const paneHomeLabels = useTerminalPaneHomeLabels(tabId, worktreeId)
   const sessionDrop = useTerminalSessionDrop()
   const menuLeafId =
     contextMenu.menuPaneId !== null ? managerRef.current?.getLeafId(contextMenu.menuPaneId) : null

@@ -1,6 +1,11 @@
 import type { ManagedPaneInternal } from './pane-manager-types'
 import type { DragReorderCallbacks, DragReorderState } from './pane-drag-reorder'
-import { positionDropOverlay, positionDropOverlayRect, resolveDropZone } from './pane-drop-zone'
+import {
+  hideDropOverlayRect,
+  positionDropOverlay,
+  positionDropOverlayRect,
+  resolveDropZone
+} from './pane-drop-zone'
 import {
   handlePaneDrop,
   hideDropOverlay,
@@ -178,7 +183,7 @@ function updateDropTarget(
         ? null
         : (callbacks.resolveExternalDropTarget?.({ sourcePaneId, clientX, clientY }) ?? null)
     if (!externalTarget) {
-      overlay.style.display = 'none'
+      hideDropOverlayRect(overlay)
       state.currentDropTarget = null
       state.currentExternalDropTarget = null
       return
@@ -196,7 +201,7 @@ function updateDropTarget(
     sourcePaneId !== null &&
     isPaneDropNoOp(sourcePaneId, targetPane.id, zone, callbacks.getPanes())
   ) {
-    overlay.style.display = 'none'
+    hideDropOverlayRect(overlay)
     state.currentDropTarget = null
     state.currentExternalDropTarget = null
     return

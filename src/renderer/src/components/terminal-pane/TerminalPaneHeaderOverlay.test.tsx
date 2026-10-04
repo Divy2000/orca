@@ -302,4 +302,51 @@ describe('TerminalPaneHeaderOverlay', () => {
 
     expect(container.querySelector('button[aria-label^="Back to"]')).toBeNull()
   })
+
+  it('labels a pane hosted from another workspace with its home in a solid header', () => {
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: '' },
+      paneHomeLabels: { 'leaf-2': 'feature-login' }
+    })
+
+    const [nativeHeader, foreignHeader] = container.querySelectorAll('.pane-title-bar')
+    const label = foreignHeader?.querySelector('[data-pane-home-label]')
+    expect(label?.textContent).toContain('feature-login')
+    expect(foreignHeader?.textContent).toContain('From feature-login')
+    expect(foreignHeader?.hasAttribute('data-chromeless')).toBe(false)
+    expect(nativeHeader?.querySelector('[data-pane-home-label]')).toBeNull()
+    expect(nativeHeader?.hasAttribute('data-chromeless')).toBe(true)
+  })
+
+  it('keeps the home label beside a pane title', () => {
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: 'build' },
+      paneHomeLabels: { 'leaf-2': 'feature-login' }
+    })
+
+    const foreignHeader = container.querySelectorAll('.pane-title-bar')[1]
+    expect(foreignHeader?.querySelector('[data-pane-home-label]')?.textContent).toContain(
+      'feature-login'
+    )
+    expect(foreignHeader?.querySelector('.pane-title-text')?.textContent).toBe('build')
+  })
+
+  it('shows the home label in a background tab header too', () => {
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: '' },
+      showAlwaysOnHeaders: false,
+      paneHomeLabels: { 'leaf-2': 'feature-login' }
+    })
+
+    expect(container.querySelectorAll('.pane-title-bar')).toHaveLength(1)
+    expect(container.querySelector('[data-pane-home-label]')?.textContent).toContain(
+      'feature-login'
+    )
+  })
+
+  it('shows no home label when every pane is native', () => {
+    const { container } = renderOverlay({ paneTitles: { 1: '', 2: '' } })
+
+    expect(container.querySelector('[data-pane-home-label]')).toBeNull()
+  })
 })

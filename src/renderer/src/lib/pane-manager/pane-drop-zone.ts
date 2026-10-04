@@ -41,11 +41,18 @@ export function positionDropOverlayRect(
   kind: 'area' | 'insertion' = 'area'
 ): void {
   overlay.style.display = ''
+  // Why: the stylesheet hides pane header controls while any marked overlay is shown.
+  overlay.dataset.paneDropVisible = ''
   overlay.dataset.paneDropOverlayKind = kind
   overlay.style.left = `${rect.left + window.scrollX}px`
   overlay.style.top = `${rect.top + window.scrollY}px`
   overlay.style.width = `${rect.width}px`
   overlay.style.height = `${rect.height}px`
+}
+
+export function hideDropOverlayRect(overlay: HTMLElement): void {
+  overlay.style.display = 'none'
+  delete overlay.dataset.paneDropVisible
 }
 
 export function positionDropOverlay(overlay: HTMLElement, rect: DOMRect, zone: DropZone): void {

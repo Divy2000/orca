@@ -1,6 +1,8 @@
 import type { ManagedPane } from '@/lib/pane-manager/pane-manager'
 
-export type SessionRestoredBannerPane = Pick<ManagedPane, 'id' | 'container'>
+export type SessionRestoredBannerPane = Pick<ManagedPane, 'id' | 'container'> & {
+  leafId?: string
+}
 
 /** `resume-unavailable`: the pane asked to resume a provider session Orca could not
  *  verify, so it launched a fresh one — silence would read as a successful restore. */
@@ -95,13 +97,16 @@ export function syncSessionRestoredBannerTitleSpace(args: {
   paneTitles: Readonly<Record<number, string>>
   renamingPaneId: number | null
   sessionRestoredBannerPaneIds: SessionRestoredBannerPaneReasons
+  /** Leaves hosted from another workspace, whose header shows their home. */
+  homeLabeledLeafIds?: ReadonlySet<string>
 }): boolean {
   let needsFit = false
   for (const pane of args.panes) {
     const shouldShow =
       !!args.paneTitles[pane.id] ||
       args.renamingPaneId === pane.id ||
-      args.sessionRestoredBannerPaneIds.has(pane.id)
+      args.sessionRestoredBannerPaneIds.has(pane.id) ||
+      (pane.leafId !== undefined && args.homeLabeledLeafIds?.has(pane.leafId) === true)
     const hadTitle = pane.container.hasAttribute('data-has-title')
     if (shouldShow && !hadTitle) {
       pane.container.setAttribute('data-has-title', '')

@@ -100,6 +100,23 @@ describe('session restored banner pane state', () => {
     expect(secondPane.container.hasAttribute('data-has-title')).toBe(false)
   })
 
+  it('reserves title space for a pane labeled with its home workspace', () => {
+    const foreignPane = { ...createPane(1), leafId: 'leaf-1' }
+    const nativePane = { ...createPane(2), leafId: 'leaf-2' }
+
+    const needsFit = syncSessionRestoredBannerTitleSpace({
+      panes: [foreignPane, nativePane],
+      paneTitles: {},
+      renamingPaneId: null,
+      sessionRestoredBannerPaneIds: new Map(),
+      homeLabeledLeafIds: new Set(['leaf-1'])
+    })
+
+    expect(needsFit).toBe(true)
+    expect(foreignPane.container.hasAttribute('data-has-title')).toBe(true)
+    expect(nativePane.container.hasAttribute('data-has-title')).toBe(false)
+  })
+
   it('reserves title space for explicit titles and inline rename', () => {
     const titledPane = createPane(1)
     const renamingPane = createPane(2)

@@ -1,5 +1,13 @@
+/**
+ * @vitest-environment happy-dom
+ */
 import { describe, expect, it } from 'vitest'
-import { resolveDropZone, resolveDropZoneRect } from './pane-drop-zone'
+import {
+  hideDropOverlayRect,
+  positionDropOverlayRect,
+  resolveDropZone,
+  resolveDropZoneRect
+} from './pane-drop-zone'
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
   return {
@@ -42,5 +50,19 @@ describe('resolveDropZoneRect', () => {
       right: expected.left + expected.width,
       bottom: expected.top + expected.height
     })
+  })
+})
+
+describe('drop overlay visibility', () => {
+  it('marks an overlay visible while positioned and clears the mark when hidden', () => {
+    const overlay = document.createElement('div')
+
+    positionDropOverlayRect(overlay, rect(10, 20, 100, 50))
+    expect(overlay.style.display).toBe('')
+    expect(overlay.hasAttribute('data-pane-drop-visible')).toBe(true)
+
+    hideDropOverlayRect(overlay)
+    expect(overlay.style.display).toBe('none')
+    expect(overlay.hasAttribute('data-pane-drop-visible')).toBe(false)
   })
 })

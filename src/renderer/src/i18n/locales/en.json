@@ -3422,6 +3422,7 @@
           },
           "terminalPaneHome": {
             "backTo": "Back to {{value0}}",
+            "from": "From {{value0}}",
             "notReady": "This terminal is still starting. Try again in a moment.",
             "itsWorkspace": "its workspace"
           },

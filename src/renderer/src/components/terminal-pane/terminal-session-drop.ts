@@ -1,5 +1,5 @@
 import type { AppState } from '@/store/types'
-import { positionDropOverlayRect } from '@/lib/pane-manager/pane-drop-zone'
+import { hideDropOverlayRect, positionDropOverlayRect } from '@/lib/pane-manager/pane-drop-zone'
 import {
   clearActiveTerminalSessionDrag,
   type TerminalSessionDragPayload
@@ -143,7 +143,7 @@ export function commitTerminalSessionDrop(
 export function showTerminalSessionDropOverlay(target: TerminalPaneSplitDropTarget | null): void {
   if (!target) {
     if (dropOverlay) {
-      dropOverlay.style.display = 'none'
+      hideDropOverlayRect(dropOverlay)
     }
     return
   }

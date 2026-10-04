@@ -15,6 +15,7 @@ import { isImeCompositionKeyDown } from '@/lib/ime-composition-keyboard-event'
 import type { PtyTransport } from './pty-transport'
 import { handleInternalTerminalFileDrop } from './terminal-drop-handler'
 import { TerminalPaneBackHomeButton } from './TerminalPaneBackHomeButton'
+import { TerminalPaneHeaderTitle } from './TerminalPaneHeaderTitle'
 
 export type PaneTitleOverlayRect = {
   left: number
@@ -132,8 +133,10 @@ export default function TerminalPaneHeaderOverlay({
         const isEditing = renamingPaneId === pane.id
         const overlayRect = paneTitleOverlayRects[pane.id]
         const isActivePane = activePaneId === pane.id
-        const isChromeless = showAlwaysOnHeaders && !title && !isEditing
-        const showHeader = overlayRect && (showAlwaysOnHeaders || Boolean(title) || isEditing)
+        const homeLabel = onSendPaneHome ? paneHomeLabels?.[pane.leafId] : undefined
+        const isChromeless = showAlwaysOnHeaders && !title && !isEditing && !homeLabel
+        const showHeader =
+          overlayRect && (showAlwaysOnHeaders || Boolean(title) || isEditing || Boolean(homeLabel))
         const closeLabel =
           paneCount > 1
             ? translate(
@@ -250,20 +253,11 @@ export default function TerminalPaneHeaderOverlay({
                     }}
                   />
                 )}
-                {title ? (
-                  <button
-                    type="button"
-                    className="pane-title-text"
-                    onClick={() => onStartRename(pane.id)}
-                    aria-label={translate(
-                      'auto.components.terminal.pane.TerminalPane.cc5a2dc706',
-                      'Edit pane title: {{value0}}',
-                      { value0: title }
-                    )}
-                  >
-                    {title}
-                  </button>
-                ) : null}
+                <TerminalPaneHeaderTitle
+                  homeWorkspaceName={homeLabel}
+                  title={title}
+                  onStartRename={() => onStartRename(pane.id)}
+                />
                 <div className="pane-title-actions ml-auto flex shrink-0 items-center gap-0">
                   {canContinueAgentSessionInNewSession && isActivePane ? (
                     <Tooltip>
@@ -335,7 +329,7 @@ export default function TerminalPaneHeaderOverlay({
                     </Tooltip>
                   ) : null}
                   <TerminalPaneBackHomeButton
-                    workspaceName={onSendPaneHome ? paneHomeLabels?.[pane.leafId] : undefined}
+                    workspaceName={homeLabel}
                     onSendHome={() => onSendPaneHome?.(pane)}
                   />
                   {showAlwaysOnHeaders && showSplitButton ? (
