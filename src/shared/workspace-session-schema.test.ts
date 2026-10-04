@@ -717,3 +717,94 @@ describe('parseWorkspaceSession', () => {
     }
   })
 })
+
+describe('parseWorkspaceSession terminal leaf homes', () => {
+  const LEAF_1 = '11111111-1111-4111-8111-111111111111'
+  const LEAF_2 = '22222222-2222-4222-8222-222222222222'
+  const FULL_HOME = {
+    worktreeId: 'repo1::/path/foreign',
+    sessionTabId: 'home-tab',
+    sessionLeafId: '33333333-3333-4333-8333-333333333333',
+    slot: { groupId: 'group-1', afterTabId: null },
+    color: '#ff0000',
+    isPinned: true
+  }
+
+  function parseLayout(extra: Record<string, unknown>) {
+    const result = parseWorkspaceSession({
+      activeRepoId: null,
+      activeWorktreeId: null,
+      activeTabId: null,
+      tabsByWorktree: {},
+      terminalLayoutsByTabId: {
+        tab1: {
+          root: {
+            type: 'split',
+            direction: 'vertical',
+            first: { type: 'leaf', leafId: LEAF_1 },
+            second: { type: 'leaf', leafId: LEAF_2 }
+          },
+          activeLeafId: LEAF_1,
+          expandedLeafId: null,
+          ...extra
+        }
+      }
+    })
+    if (!result.ok) {
+      throw new Error('session did not parse')
+    }
+    return result.value.terminalLayoutsByTabId.tab1!
+  }
+
+  it('preserves a fully populated home entry across hydration', () => {
+    const layout = parseLayout({ homeByLeafId: { [LEAF_2]: FULL_HOME } })
+
+    expect(layout.homeByLeafId).toEqual({ [LEAF_2]: FULL_HOME })
+  })
+
+  it('preserves a minimal home entry without inventing optional fields', () => {
+    const minimal = {
+      worktreeId: FULL_HOME.worktreeId,
+      sessionTabId: FULL_HOME.sessionTabId,
+      sessionLeafId: FULL_HOME.sessionLeafId
+    }
+
+    const layout = parseLayout({ homeByLeafId: { [LEAF_2]: minimal } })
+
+    expect(layout.homeByLeafId).toStrictEqual({ [LEAF_2]: minimal })
+  })
+
+  it('drops a malformed home entry and keeps the valid ones', () => {
+    const layout = parseLayout({
+      homeByLeafId: { [LEAF_1]: { worktreeId: 42 }, [LEAF_2]: FULL_HOME }
+    })
+
+    expect(layout.homeByLeafId).toEqual({ [LEAF_2]: FULL_HOME })
+  })
+
+  it('drops a malformed optional home field without losing the entry', () => {
+    const layout = parseLayout({
+      homeByLeafId: { [LEAF_2]: { ...FULL_HOME, slot: 'bad', color: 7, isPinned: 'yes' } }
+    })
+
+    expect(layout.homeByLeafId).toEqual({
+      [LEAF_2]: {
+        worktreeId: FULL_HOME.worktreeId,
+        sessionTabId: FULL_HOME.sessionTabId,
+        sessionLeafId: FULL_HOME.sessionLeafId
+      }
+    })
+  })
+
+  it('drops a non-record home map without failing the session', () => {
+    const layout = parseLayout({ homeByLeafId: 'garbage' })
+
+    expect(layout.homeByLeafId).toBeUndefined()
+  })
+
+  it('does not add a home map to an unmixed layout', () => {
+    const layout = parseLayout({})
+
+    expect(JSON.stringify(layout)).not.toContain('homeByLeafId')
+  })
+})

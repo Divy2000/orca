@@ -46,7 +46,32 @@ function splitLayout(): TerminalLayoutSnapshot {
   }
 }
 
+const FOREIGN_HOME = {
+  worktreeId: 'repo-1::/work/foreign',
+  sessionTabId: 'tab-home',
+  sessionLeafId: '99999999-9999-4999-8999-999999999999'
+}
+
 describe('detachTerminalLayoutLeaf', () => {
+  it('moves the detached leaf home entry to the detached layout and drops it from the source', () => {
+    const layout = { ...splitLayout(), homeByLeafId: { [LEAF_2]: FOREIGN_HOME } }
+
+    const detached = detachTerminalLayoutLeaf(layout, LEAF_2)
+
+    expect(detached?.detachedLayout.homeByLeafId).toEqual({ [LEAF_2]: FOREIGN_HOME })
+    expect(detached?.sourceLayout.homeByLeafId).toBeUndefined()
+    expect(Object.hasOwn(detached?.sourceLayout ?? {}, 'homeByLeafId')).toBe(false)
+  })
+
+  it('keeps sibling home entries on the source layout when another leaf is detached', () => {
+    const layout = { ...splitLayout(), homeByLeafId: { [LEAF_1]: FOREIGN_HOME } }
+
+    const detached = detachTerminalLayoutLeaf(layout, LEAF_2)
+
+    expect(detached?.sourceLayout.homeByLeafId).toEqual({ [LEAF_1]: FOREIGN_HOME })
+    expect(Object.hasOwn(detached?.detachedLayout ?? {}, 'homeByLeafId')).toBe(false)
+  })
+
   it('extracts a nested leaf into a single-pane layout while preserving SSH PTY state', () => {
     const detached = detachTerminalLayoutLeaf(splitLayout(), LEAF_2)
 

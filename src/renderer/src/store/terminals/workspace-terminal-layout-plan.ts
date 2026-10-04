@@ -6,6 +6,7 @@ import {
   resolvePtyBoundActiveLeafId
 } from '@/components/terminal-pane/terminal-layout-leaf-ids'
 import { resolveTerminalLayoutPtyOwnershipTransfers } from '@/components/terminal-pane/terminal-layout-pty-ownership'
+import { normalizeTerminalLeafHomes } from '../../../../shared/terminal-pane-home'
 import { sanitizeTerminalLayoutPaneTitles } from '@/lib/terminal-pane-title-sanitization'
 import type { TerminalLayoutPtyOwnershipTransfer } from './workspace-terminal-hydration-patch'
 
@@ -15,7 +16,8 @@ export function buildWorkspaceTerminalLayoutPlan({
   releasedPtyIdsByTabId,
   session,
   tabById,
-  validTabIds
+  validTabIds,
+  validWorktreeIds
 }: {
   ownershipTransfersByTabId: Map<string, TerminalLayoutPtyOwnershipTransfer[]>
   ownershipTransferTabIds: ReadonlySet<string> | null
@@ -23,6 +25,7 @@ export function buildWorkspaceTerminalLayoutPlan({
   session: WorkspaceSessionState
   tabById: ReadonlyMap<string, TerminalTab>
   validTabIds: ReadonlySet<string>
+  validWorktreeIds: ReadonlySet<string>
 }): Record<string, TerminalLayoutSnapshot> {
   return Object.fromEntries(
     Object.entries(session.terminalLayoutsByTabId)
@@ -45,14 +48,18 @@ export function buildWorkspaceTerminalLayoutPlan({
         }
         const tab = tabById.get(tabId)
         const sanitized = tab ? sanitizeTerminalLayoutPaneTitles(normalized, tab) : normalized
-        const activeLeafId = sanitized.root
+        // Why: a deleted home workspace makes its pane native; the pane's process is never killed.
+        const homed = tab
+          ? normalizeTerminalLeafHomes(sanitized, tab.worktreeId, validWorktreeIds)
+          : sanitized
+        const activeLeafId = homed.root
           ? resolvePtyBoundActiveLeafId({
-              root: sanitized.root,
-              activeLeafId: sanitized.activeLeafId,
-              ptyIdsByLeafId: sanitized.ptyIdsByLeafId
+              root: homed.root,
+              activeLeafId: homed.activeLeafId,
+              ptyIdsByLeafId: homed.ptyIdsByLeafId
             })
-          : sanitized.activeLeafId
-        return [tabId, { ...sanitized, activeLeafId }]
+          : homed.activeLeafId
+        return [tabId, { ...homed, activeLeafId }]
       })
   )
 }

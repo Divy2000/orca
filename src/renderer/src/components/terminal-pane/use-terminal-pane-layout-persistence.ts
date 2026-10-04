@@ -4,6 +4,7 @@ import type { ManagedPane } from '@/lib/pane-manager/pane-manager'
 import { serializeTerminalLayout } from './layout-serialization'
 import { mergeCapturedLeafState } from './merge-captured-leaf-state'
 import { resolveTerminalLayoutActiveLeafId } from './terminal-layout-leaf-ids'
+import { carryTerminalLeafHomes } from '../../../../shared/terminal-pane-home'
 import { isRemoteRuntimePtyId } from '@/runtime/runtime-terminal-inspection'
 import { clearTerminalScrollbackAndFollowOutput } from '@/lib/pane-manager/terminal-scrollback-clear'
 import { clearWebRuntimeTerminalBuffer } from '@/runtime/web-runtime-session'
@@ -119,6 +120,11 @@ export function useTerminalPaneLayoutPersistence(controller: TerminalPaneStartup
     }
     if (Object.keys(titlesByLeafId).length > 0) {
       layout.titlesByLeafId = titlesByLeafId
+    }
+    // Why: setTabLayout replaces the stored layout, so a rebuild without this erases cross-workspace homes.
+    const homeByLeafId = carryTerminalLeafHomes(existing?.homeByLeafId, currentLeafIds)
+    if (homeByLeafId) {
+      layout.homeByLeafId = homeByLeafId
     }
     setTabLayout(tabId, layout)
     const hasRemotePane = Object.values(mergedPtyIds).some(

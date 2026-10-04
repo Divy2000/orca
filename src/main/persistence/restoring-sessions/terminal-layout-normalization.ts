@@ -84,15 +84,15 @@ export function cloneLayoutWithLeafIds(
   }
 }
 
-export function remapLeafRecordForPersistence(
-  source: Record<string, string> | undefined,
+export function remapLeafRecordForPersistence<T>(
+  source: Record<string, T> | undefined,
   leafIdByInputLeafId: Map<string, string>,
   duplicatedInputLeafIds: Set<string>
-): Record<string, string> | undefined {
+): Record<string, T> | undefined {
   if (!source) {
     return undefined
   }
-  const next: Record<string, string> = {}
+  const next: Record<string, T> = {}
   for (const [leafId, value] of Object.entries(source)) {
     if (duplicatedInputLeafIds.has(leafId)) {
       continue
@@ -105,9 +105,9 @@ export function remapLeafRecordForPersistence(
   return Object.keys(next).length > 0 ? next : undefined
 }
 
-export function leafRecordEquivalent(
-  left: Record<string, string> | undefined,
-  right: Record<string, string> | undefined
+export function leafRecordEquivalent<T>(
+  left: Record<string, T> | undefined,
+  right: Record<string, T> | undefined
 ): boolean {
   const leftEntries = Object.entries(left ?? {})
   const rightRecord = right ?? {}
@@ -117,11 +117,11 @@ export function leafRecordEquivalent(
   return leftEntries.every(([key, value]) => rightRecord[key] === value)
 }
 
-export function preserveMissingLeafRecordEntries(
-  priorRecord: Record<string, string> | undefined,
-  incomingRecord: Record<string, string> | undefined,
+export function preserveMissingLeafRecordEntries<T>(
+  priorRecord: Record<string, T> | undefined,
+  incomingRecord: Record<string, T> | undefined,
   liveLeafIds: Set<string>
-): Record<string, string> | undefined {
+): Record<string, T> | undefined {
   const preserved = Object.fromEntries(
     Object.entries(priorRecord ?? {}).filter(
       ([leafId]) => liveLeafIds.has(leafId) && incomingRecord?.[leafId] === undefined
@@ -242,11 +242,17 @@ export function normalizeTerminalLayoutSnapshotForPersistence(
     leafIdByInputLeafId,
     duplicatedInputLeafIds
   )
+  const homeByLeafId = remapLeafRecordForPersistence(
+    inputSnapshot.homeByLeafId,
+    leafIdByInputLeafId,
+    duplicatedInputLeafIds
+  )
   const recordsChanged =
     !leafRecordEquivalent(inputSnapshot.ptyIdsByLeafId, ptyIdsByLeafId) ||
     !leafRecordEquivalent(inputSnapshot.buffersByLeafId, buffersByLeafId) ||
     !leafRecordEquivalent(inputSnapshot.scrollbackRefsByLeafId, scrollbackRefsByLeafId) ||
-    !leafRecordEquivalent(inputSnapshot.titlesByLeafId, titlesByLeafId)
+    !leafRecordEquivalent(inputSnapshot.titlesByLeafId, titlesByLeafId) ||
+    !leafRecordEquivalent(inputSnapshot.homeByLeafId, homeByLeafId)
   const metadataChanged =
     activeLeafId !== inputSnapshot.activeLeafId ||
     expandedLeafId !== inputSnapshot.expandedLeafId ||
@@ -259,6 +265,7 @@ export function normalizeTerminalLayoutSnapshotForPersistence(
     buffersByLeafId: _oldBuffersByLeafId,
     scrollbackRefsByLeafId: _oldScrollbackRefsByLeafId,
     titlesByLeafId: _oldTitlesByLeafId,
+    homeByLeafId: _oldHomeByLeafId,
     chatLeafId: _oldChatLeafId,
     ...snapshotWithoutLeafRecords
   } = inputSnapshot
@@ -272,7 +279,8 @@ export function normalizeTerminalLayoutSnapshotForPersistence(
       ...(ptyIdsByLeafId ? { ptyIdsByLeafId } : {}),
       ...(buffersByLeafId ? { buffersByLeafId } : {}),
       ...(scrollbackRefsByLeafId ? { scrollbackRefsByLeafId } : {}),
-      ...(titlesByLeafId ? { titlesByLeafId } : {})
+      ...(titlesByLeafId ? { titlesByLeafId } : {}),
+      ...(homeByLeafId ? { homeByLeafId } : {})
     },
     changed: true,
     leafIdByInputLeafId

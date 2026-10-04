@@ -169,6 +169,58 @@ describe('workspace session terminal binding replay', () => {
     })
   })
 
+  it('restores the home entry alongside a binding rescued from a stale write', () => {
+    const home = { worktreeId: WORKTREE_B, sessionTabId: 'tab-home', sessionLeafId: LEAF_TWO }
+    const prior = session(null)
+    prior.terminalLayoutsByTabId.tab = {
+      root: { type: 'leaf', leafId: LEAF_ONE },
+      activeLeafId: LEAF_ONE,
+      expandedLeafId: null,
+      ptyIdsByLeafId: { [LEAF_ONE]: 'pty-foreign' },
+      homeByLeafId: { [LEAF_ONE]: home }
+    }
+    const incoming = session(null)
+    incoming.terminalLayoutsByTabId.tab = {
+      root: { type: 'leaf', leafId: LEAF_ONE },
+      activeLeafId: LEAF_ONE,
+      expandedLeafId: null,
+      ptyIdsByLeafId: {}
+    }
+
+    preserveMissingWorkspaceSessionTerminalBindings(incoming, prior, bindingRecovery as never)
+
+    expect(incoming.terminalLayoutsByTabId.tab?.homeByLeafId).toEqual({ [LEAF_ONE]: home })
+  })
+
+  it('keeps the incoming home entry over the prior one for the same leaf', () => {
+    const priorHome = { worktreeId: WORKTREE_A, sessionTabId: 'tab-old', sessionLeafId: LEAF_ONE }
+    const incomingHome = {
+      worktreeId: WORKTREE_B,
+      sessionTabId: 'tab-new',
+      sessionLeafId: LEAF_ONE
+    }
+    const prior = session(null)
+    prior.terminalLayoutsByTabId.tab = {
+      root: { type: 'leaf', leafId: LEAF_ONE },
+      activeLeafId: LEAF_ONE,
+      expandedLeafId: null,
+      ptyIdsByLeafId: { [LEAF_ONE]: 'pty-foreign' },
+      homeByLeafId: { [LEAF_ONE]: priorHome }
+    }
+    const incoming = session(null)
+    incoming.terminalLayoutsByTabId.tab = {
+      root: { type: 'leaf', leafId: LEAF_ONE },
+      activeLeafId: LEAF_ONE,
+      expandedLeafId: null,
+      ptyIdsByLeafId: {},
+      homeByLeafId: { [LEAF_ONE]: incomingHome }
+    }
+
+    preserveMissingWorkspaceSessionTerminalBindings(incoming, prior, bindingRecovery as never)
+
+    expect(incoming.terminalLayoutsByTabId.tab?.homeByLeafId).toEqual({ [LEAF_ONE]: incomingHome })
+  })
+
   it('fails closed when one tab id is duplicated inside a single worktree list', () => {
     // Map indexing is last-wins where a linear find was first-wins; the ambiguity
     // fence must skip these ids so the two strategies can never disagree.

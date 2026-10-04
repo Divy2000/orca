@@ -187,6 +187,23 @@ describe('terminal chat ownership lifecycle', () => {
     )
   })
 
+  it('carries stored home entries through a persist and drops entries for unmounted leaves', () => {
+    const home = { worktreeId: 'other-wt', sessionTabId: 'home-tab', sessionLeafId: LEFT }
+    mocks.state.setTabLayout('tab', {
+      ...mocks.state.terminalLayoutsByTabId.tab,
+      homeByLeafId: { [RIGHT]: home, '99999999-9999-4999-8999-999999999999': home }
+    })
+    const hook = renderHook(() => useFixture(makeFixture(), RIGHT))
+    hook.result.current.persistLayoutSnapshot()
+    expect(mocks.state.terminalLayoutsByTabId.tab.homeByLeafId).toEqual({ [RIGHT]: home })
+  })
+
+  it('does not add a home map to a tab that never had one', () => {
+    const hook = renderHook(() => useFixture(makeFixture(), RIGHT))
+    hook.result.current.persistLayoutSnapshot()
+    expect(Object.hasOwn(mocks.state.terminalLayoutsByTabId.tab, 'homeByLeafId')).toBe(false)
+  })
+
   it('clears ownership when the tab-bar turns chat off, then targets the active sibling', () => {
     const fixture = makeFixture()
     const hook = renderHook(() => useFixture(fixture, RIGHT))

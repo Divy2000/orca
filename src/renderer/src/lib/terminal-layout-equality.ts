@@ -2,6 +2,7 @@ import type {
   TerminalLayoutSnapshot,
   TerminalPaneLayoutNode
 } from '../../../shared/terminal-tab-types'
+import { sameTerminalLeafHomes } from '../../../shared/terminal-pane-home'
 
 /** Exported so pty-topology gates can reuse the leaf-map comparison this equality already defines. */
 export function sameStringRecord(
@@ -53,6 +54,7 @@ export function terminalLayoutEqual(
     sameStringRecord(a?.ptyIdsByLeafId, b.ptyIdsByLeafId) &&
     sameStringRecord(a?.buffersByLeafId, b.buffersByLeafId) &&
     sameStringRecord(a?.scrollbackRefsByLeafId, b.scrollbackRefsByLeafId) &&
-    sameStringRecord(a?.titlesByLeafId, b.titlesByLeafId)
+    sameStringRecord(a?.titlesByLeafId, b.titlesByLeafId) &&
+    sameTerminalLeafHomes(a?.homeByLeafId, b.homeByLeafId)
   )
 }
