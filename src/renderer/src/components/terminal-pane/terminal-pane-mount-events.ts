@@ -15,6 +15,7 @@ import {
   resolveTerminalPaneSplitSourceId
 } from './terminal-pane-split-request-routing'
 import type { PtyConnectionDeps } from './pty-connection-types'
+import { installSplitPaneHome, splitWithInstalledPaneHome } from './terminal-pane-split-home'
 
 export function installTerminalPaneMountEvents(args: {
   manager: PaneManager
@@ -47,20 +48,33 @@ export function installTerminalPaneMountEvents(args: {
       if (sourcePaneId < 0) {
         return
       }
+      const inheritedHome = installSplitPaneHome({
+        tabId: deps.tabId,
+        tabWorktreeId: deps.worktreeId,
+        sourceLeafId: detail.sourceLeafId ?? mgr.getLeafId(sourcePaneId),
+        newLeafId: detail.newLeafId,
+        homeWorktreeId: detail.homeWorktreeId
+      })
+      const newLeafId = inheritedHome?.leafId ?? detail.newLeafId
       const splitOptions = {
-        ...(detail.newLeafId ? { leafId: detail.newLeafId } : {}),
+        ...(newLeafId ? { leafId: newLeafId } : {}),
         ...(detail.ptyId ? { ptyId: detail.ptyId } : {})
       }
-      if (detail.command) {
-        const createdPane = splitPaneWithOneShotStartup(ptyDeps, { command: detail.command }, () =>
-          mgr.splitPane(sourcePaneId, detail.direction, splitOptions)
+      const command = detail.command
+      if (command) {
+        const createdPane = splitWithInstalledPaneHome(inheritedHome, () =>
+          splitPaneWithOneShotStartup(ptyDeps, { command }, () =>
+            mgr.splitPane(sourcePaneId, detail.direction, splitOptions)
+          )
         )
         recordRuntimeCreatedTerminalPaneSplit(createdPane, {
           source: detail.telemetrySource ?? 'command',
           direction: detail.direction
         })
       } else {
-        const createdPane = mgr.splitPane(sourcePaneId, detail.direction, splitOptions)
+        const createdPane = splitWithInstalledPaneHome(inheritedHome, () =>
+          mgr.splitPane(sourcePaneId, detail.direction, splitOptions)
+        )
         const telemetrySuppressed = createdPane
           ? consumePendingWebRuntimeSplitMirrorTelemetry(detail.sourcePtyId, detail.direction)
           : false

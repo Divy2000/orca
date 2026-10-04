@@ -4,6 +4,8 @@ import { useAppStore, type AppState } from '@/store'
 import { resolveWorktreeStatus, type WorktreeStatus } from '@/lib/worktree-status'
 import { EMPTY_BROWSER_TABS, EMPTY_TABS } from './WorktreeCardHelpers'
 import {
+  resolveWorktreeStatusPaneInputs,
+  selectHostedPaneStatusInputs,
   selectLivePtyIdsForWorktree,
   selectTerminalLayoutRootsForWorktree,
   selectRuntimePaneTitlesForWorktree
@@ -42,16 +44,28 @@ export function selectWorktreeActivityStatuses(
       agentStatusPaneIdsByTabId,
       stalePaneIdsByTabId
     } = selectWorktreeAgentActivitySummary(statusInputs, worktreeId)
+    const hosted = selectHostedPaneStatusInputs(statusInputs, worktreeId)
+    const paneInputs = resolveWorktreeStatusPaneInputs(
+      {
+        tabs: statusInputs.tabsByWorktree[worktreeId] ?? EMPTY_TABS,
+        ptyIdsByTabId: selectLivePtyIdsForWorktree(statusInputs, worktreeId),
+        runtimePaneTitlesByTabId: selectRuntimePaneTitlesForWorktree(statusInputs, worktreeId),
+        terminalLayoutRootsByTabId: selectTerminalLayoutRootsForWorktree(statusInputs, worktreeId)
+      },
+      worktreeId,
+      hosted
+    )
     statuses.set(
       worktreeId,
       resolveWorktreeStatus({
-        tabs: statusInputs.tabsByWorktree[worktreeId] ?? EMPTY_TABS,
+        tabs: paneInputs.tabs,
         browserTabs: statusInputs.browserTabsByWorktree[worktreeId] ?? EMPTY_BROWSER_TABS,
-        ptyIdsByTabId: selectLivePtyIdsForWorktree(statusInputs, worktreeId),
-        runtimePaneTitlesByTabId: selectRuntimePaneTitlesForWorktree(statusInputs, worktreeId),
+        ptyIdsByTabId: paneInputs.ptyIdsByTabId,
+        runtimePaneTitlesByTabId: paneInputs.runtimePaneTitlesByTabId,
         agentStatusPaneIdsByTabId,
         stalePaneIdsByTabId,
-        terminalLayoutRootsByTabId: selectTerminalLayoutRootsForWorktree(statusInputs, worktreeId),
+        terminalLayoutRootsByTabId: paneInputs.terminalLayoutRootsByTabId,
+        runtimePaneTitleLeafIdsByTabId: hosted.runtimePaneTitleLeafIdsByTabId,
         hasPermission,
         hasLiveWorking,
         hasLiveMonitoring,

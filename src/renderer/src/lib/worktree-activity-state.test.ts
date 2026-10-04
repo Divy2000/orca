@@ -4,7 +4,11 @@ import {
   getWorktreeIdsWithLiveAgent,
   isInactiveWorkspace
 } from './worktree-activity-state'
-import type { TerminalTab } from '../../../shared/terminal-tab-types'
+import type {
+  TerminalLayoutSnapshot,
+  TerminalLeafHome,
+  TerminalTab
+} from '../../../shared/terminal-tab-types'
 import type { AgentStatusEntry } from '../../../shared/agent-status-types'
 
 const NOW = 10_000_000
@@ -240,5 +244,109 @@ describe('getWorktreeIdsWithLiveAgent', () => {
         ['wt-3', 'permission']
       ])
     )
+  })
+})
+
+describe('foreign pane attribution', () => {
+  const W1 = 'repo-1::/work/w1'
+  const W2 = 'repo-1::/work/w2'
+  const NATIVE_LEAF = '11111111-1111-4111-8111-111111111111'
+  const FOREIGN_LEAF = '22222222-2222-4222-8222-222222222222'
+  const home: TerminalLeafHome = {
+    worktreeId: W1,
+    sessionTabId: 'tab-w1',
+    sessionLeafId: FOREIGN_LEAF
+  }
+
+  function hostLayout(
+    ptyIdsByLeafId: Record<string, string> = {}
+  ): Record<string, TerminalLayoutSnapshot> {
+    return {
+      'tab-w2': {
+        root: {
+          type: 'split',
+          direction: 'vertical',
+          first: { type: 'leaf', leafId: NATIVE_LEAF },
+          second: { type: 'leaf', leafId: FOREIGN_LEAF }
+        },
+        activeLeafId: NATIVE_LEAF,
+        expandedLeafId: null,
+        homeByLeafId: { [FOREIGN_LEAF]: home },
+        ptyIdsByLeafId
+      }
+    }
+  }
+
+  const tabsByWorktree = { [W1]: [makeTab('tab-w1')], [W2]: [makeTab('tab-w2')] }
+
+  it('given W1 working row on a pane hosted in a W2 tab then W1 is working and W2 is not', () => {
+    const entries = {
+      [`tab-w2:${FOREIGN_LEAF}`]: makeAgentEntry({
+        paneKey: `tab-w2:${FOREIGN_LEAF}`,
+        worktreeId: W1
+      })
+    }
+
+    expect(getLiveAgentStatusByWorktreeId(entries, tabsByWorktree, NOW, hostLayout())).toEqual(
+      new Map([[W1, 'working']])
+    )
+  })
+
+  it('attributes a foreign pane row without a worktree stamp to its home', () => {
+    const entries = {
+      [`tab-w2:${FOREIGN_LEAF}`]: makeAgentEntry({ paneKey: `tab-w2:${FOREIGN_LEAF}` })
+    }
+
+    expect(getWorktreeIdsWithLiveAgent(entries, tabsByWorktree, NOW, hostLayout())).toEqual(
+      new Set([W1])
+    )
+  })
+
+  it('keeps a native pane row in the same tab attributed to the host', () => {
+    const entries = {
+      [`tab-w2:${NATIVE_LEAF}`]: makeAgentEntry({ paneKey: `tab-w2:${NATIVE_LEAF}` })
+    }
+
+    expect(getLiveAgentStatusByWorktreeId(entries, tabsByWorktree, NOW, hostLayout())).toEqual(
+      new Map([[W2, 'working']])
+    )
+  })
+
+  it('counts a live foreign pty for its home and not for a host with no native pty', () => {
+    const layouts = hostLayout({ [FOREIGN_LEAF]: 'pty-foreign' })
+    const ptyIdsByTabId = { 'tab-w2': ['pty-foreign'] }
+
+    expect(
+      isInactiveWorkspace(W1, tabsByWorktree, ptyIdsByTabId, {}, new Set(), new Set(), layouts)
+    ).toBe(false)
+    expect(
+      isInactiveWorkspace(W2, tabsByWorktree, ptyIdsByTabId, {}, new Set(), new Set(), layouts)
+    ).toBe(true)
+  })
+
+  it('given a foreign leaf whose pty binding has not hydrated then the host is not kept active by it', () => {
+    const layouts = hostLayout({ [NATIVE_LEAF]: 'pty-native' })
+    const ptyIdsByTabId = { 'tab-w2': ['pty-foreign'] }
+
+    expect(
+      isInactiveWorkspace(W2, tabsByWorktree, ptyIdsByTabId, {}, new Set(), new Set(), layouts)
+    ).toBe(true)
+  })
+
+  it('keeps the host active when its tab also has a live native pty', () => {
+    const layouts = hostLayout({ [FOREIGN_LEAF]: 'pty-foreign', [NATIVE_LEAF]: 'pty-native' })
+    const ptyIdsByTabId = { 'tab-w2': ['pty-native', 'pty-foreign'] }
+
+    expect(
+      isInactiveWorkspace(W2, tabsByWorktree, ptyIdsByTabId, {}, new Set(), new Set(), layouts)
+    ).toBe(false)
+  })
+
+  it('does not count a home whose foreign pane has no live pty', () => {
+    const layouts = hostLayout({ [FOREIGN_LEAF]: 'pty-foreign' })
+
+    expect(
+      isInactiveWorkspace(W1, tabsByWorktree, { 'tab-w2': [] }, {}, new Set(), new Set(), layouts)
+    ).toBe(true)
   })
 })

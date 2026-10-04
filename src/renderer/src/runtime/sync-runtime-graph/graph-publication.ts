@@ -12,6 +12,7 @@ import type {
 } from '../../../../shared/runtime-types'
 import { isTerminalLeafId } from '../../../../shared/stable-pane-id'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
+import { resolveTerminalLeafHomeWorktreeId } from '../../../../shared/terminal-pane-home'
 import { applyNativeChatLaunchDraftResolved } from '../native-chat-launch-draft-runtime-resolution'
 import { resolveTerminalLayoutRoot } from '../remote-terminal-layout-resolution'
 import { buildMobileSessionTabSnapshots } from './mobile-session-snapshots'
@@ -85,8 +86,8 @@ export async function syncRuntimeGraph(): Promise<void> {
       activeLeafId: activePaneId === null ? null : (manager?.getLeafId(activePaneId) ?? null),
       layout: serializePaneTree(root)
     })
-    const savedPtyIdsByLeafId =
-      state.terminalLayoutsByTabId[registeredTab.tabId]?.ptyIdsByLeafId ?? {}
+    const savedLayout = state.terminalLayoutsByTabId[registeredTab.tabId]
+    const savedPtyIdsByLeafId = savedLayout?.ptyIdsByLeafId ?? {}
     for (const pane of manager?.getPanes() ?? []) {
       const leafId = pane.leafId
       const ptyId = registeredTab.getPtyIdForPane(pane.id)
@@ -104,7 +105,12 @@ export async function syncRuntimeGraph(): Promise<void> {
       const paneTitles = state.runtimePaneTitlesByTabId[registeredTab.tabId] ?? {}
       graph.leaves.push({
         tabId: registeredTab.tabId,
-        worktreeId: registeredTab.worktreeId,
+        // Why: a foreign pane's PTY belongs to its home; main attributes it by the leaf, not the tab.
+        worktreeId: resolveTerminalLeafHomeWorktreeId(
+          savedLayout,
+          registeredTab.worktreeId,
+          leafId
+        ),
         leafId,
         paneRuntimeId: pane.id,
         ptyId,
@@ -173,7 +179,7 @@ export async function syncRuntimeGraph(): Promise<void> {
         const parkedPaneId = parkedPaneIdsByPtyId.get(ptyId)
         graph.leaves.push({
           tabId: tab.id,
-          worktreeId,
+          worktreeId: resolveTerminalLeafHomeWorktreeId(layout, worktreeId, leafId),
           leafId,
           paneRuntimeId: parkedPaneId ?? index + 1,
           ptyId,

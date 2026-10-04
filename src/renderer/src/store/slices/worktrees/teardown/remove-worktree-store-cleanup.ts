@@ -56,6 +56,7 @@ export function applyRemoveWorktreeSuccessState(
       tabsByWorktree: omitByWorktree(s.tabsByWorktree),
       ptyIdsByTabId: omitByTabId(s.ptyIdsByTabId),
       runtimePaneTitlesByTabId: omitByTabId(s.runtimePaneTitlesByTabId),
+      runtimePaneTitleLeafIdsByTabId: omitByTabId(s.runtimePaneTitleLeafIdsByTabId),
       automaticAgentResumeClaimsByTabId: omitByTabId(s.automaticAgentResumeClaimsByTabId),
       nativeChatLaunchPromptByTabId: omitByTabId(s.nativeChatLaunchPromptByTabId),
       nativeChatLaunchDraftByTabId: omitByTabId(s.nativeChatLaunchDraftByTabId),

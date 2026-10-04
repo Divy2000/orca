@@ -68,7 +68,13 @@ export type DashboardSnapshotState = Pick<
   Partial<
     DashboardCardTerminalInputState &
       DashboardLaunchDetectionState &
-      Pick<AppState, 'runtimeEnvironments' | 'sshTargetLabels' | 'unifiedTabsByWorktree'>
+      Pick<
+        AppState,
+        | 'runtimeEnvironments'
+        | 'sshTargetLabels'
+        | 'unifiedTabsByWorktree'
+        | 'runtimePaneTitleLeafIdsByTabId'
+      >
   >
 
 /**
@@ -253,7 +259,8 @@ export function buildDashboardSnapshot(
             row,
             generatedTitlesEnabled,
             terminalLayoutsByTabId[row.tab.id],
-            paneTitlesByTabId[row.tab.id]
+            paneTitlesByTabId[row.tab.id],
+            state.runtimePaneTitleLeafIdsByTabId?.[row.tab.id]
           )
         ),
         ...(terminalInput ? { terminalInput } : {})

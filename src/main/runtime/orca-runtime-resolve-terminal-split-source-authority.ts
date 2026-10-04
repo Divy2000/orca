@@ -15,6 +15,31 @@ import {
   resolveClaudeAgentTeamsShimBin
 } from './claude-agent-teams-shim-env'
 import { applyClaudeEnvPatch } from '../claude-accounts/environment'
+import type { WorkspaceSessionState } from '../../shared/workspace-session-state-types'
+import type { TerminalLayoutSnapshot } from '../../shared/terminal-tab-types'
+
+/** The host owning `tabId` when its `leafId` is a foreign pane whose home is `homeWorktreeId`. */
+function resolveForeignLeafHostWorktreeId(
+  session: WorkspaceSessionState | null | undefined,
+  layout: TerminalLayoutSnapshot | undefined,
+  tabId: string,
+  leafId: string,
+  homeWorktreeId: string
+): string | null {
+  const home = layout?.homeByLeafId?.[leafId]
+  if (!session || !home || !runtimeWorktreeIdsEqual(home.worktreeId, homeWorktreeId)) {
+    return null
+  }
+  for (const [ownerWorktreeId, tabs] of Object.entries(session.tabsByWorktree)) {
+    if (
+      !runtimeWorktreeIdsEqual(ownerWorktreeId, homeWorktreeId) &&
+      tabs.some((tab) => tab.id === tabId)
+    ) {
+      return ownerWorktreeId
+    }
+  }
+  return null
+}
 
 export class OrcaRuntimeWithResolveTerminalSplitSourceAuthority extends OrcaRuntimeWithSplitPtyBackedTerminal {
   protected resolveTerminalSplitSourceAuthority(
@@ -30,13 +55,19 @@ export class OrcaRuntimeWithResolveTerminalSplitSourceAuthority extends OrcaRunt
     liveIncarnationId: string | null
   } | null {
     const session = this.getWorkspaceSessionForWorktree(worktreeId)
-    const sessionWorktreeId = session ? resolveTerminalSessionWorktreeId(session, worktreeId) : null
+    const persistedLayout = session?.terminalLayoutsByTabId?.[tabId]
+    // Why: a leaf hosted for another workspace names its home; its tab is still owned by the host.
+    const tabWorktreeId =
+      resolveForeignLeafHostWorktreeId(session, persistedLayout, tabId, leafId, worktreeId) ??
+      worktreeId
+    const sessionWorktreeId = session
+      ? resolveTerminalSessionWorktreeId(session, tabWorktreeId)
+      : null
     const persistedTab = sessionWorktreeId
       ? session?.tabsByWorktree[sessionWorktreeId]?.find(
-          (tab) => tab.id === tabId && runtimeWorktreeIdsEqual(tab.worktreeId, worktreeId)
+          (tab) => tab.id === tabId && runtimeWorktreeIdsEqual(tab.worktreeId, tabWorktreeId)
         )
       : undefined
-    const persistedLayout = session?.terminalLayoutsByTabId?.[tabId]
     const persistedIncarnationId =
       session?.terminalPtyIncarnationsByPaneKey?.[makePaneKey(tabId, leafId)] ?? null
     const liveIncarnationId = this.ptysById.get(ptyId)?.incarnationId ?? null
@@ -58,7 +89,7 @@ export class OrcaRuntimeWithResolveTerminalSplitSourceAuthority extends OrcaRunt
     const rendererMounted = Boolean(
       rendererTab &&
       rendererLeaf &&
-      runtimeWorktreeIdsEqual(rendererTab.worktreeId, worktreeId) &&
+      runtimeWorktreeIdsEqual(rendererTab.worktreeId, tabWorktreeId) &&
       runtimeWorktreeIdsEqual(rendererLeaf.worktreeId, worktreeId) &&
       (rendererLeaf.ptyId === ptyId || (persisted && rendererLeaf.ptyId === null))
     )
@@ -70,6 +101,11 @@ export class OrcaRuntimeWithResolveTerminalSplitSourceAuthority extends OrcaRunt
         persistedIncarnationId,
         liveIncarnationId
       }
+    }
+    // Why: an unpersisted spawn binds under the spawn's own worktree, which for a foreign leaf
+    // would graft the host tab into its home; only a persisted source names the host binding.
+    if (!runtimeWorktreeIdsEqual(tabWorktreeId, worktreeId)) {
+      return null
     }
     // Why: renderer adoption can precede graph sync; this path still requires reveal success before commit.
     const projected = [...this.mobileSessionTabsByWorktree.entries()].some(

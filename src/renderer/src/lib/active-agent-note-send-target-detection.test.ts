@@ -178,6 +178,25 @@ describe('active agent note send', () => {
     expect(getActiveAgentNoteTarget(testState.appState, 'wt-1', NOW)).toBeNull()
   })
 
+  it('does not credit the focused pane with an agent title recorded for its sibling', () => {
+    testState.appState.runtimePaneTitlesByTabId = { 'tab-1': { 1: 'Codex' } }
+    testState.appState.runtimePaneTitleLeafIdsByTabId = { 'tab-1': { 1: OTHER_LEAF_ID } }
+    testState.appState.terminalLayoutsByTabId = {
+      'tab-1': {
+        activeLeafId: LEAF_ID,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          first: { type: 'leaf', leafId: LEAF_ID },
+          second: { type: 'leaf', leafId: OTHER_LEAF_ID }
+        },
+        ptyIdsByLeafId: { [LEAF_ID]: 'pty-1' }
+      }
+    }
+
+    expect(getActiveAgentNoteTarget(testState.appState, 'wt-1', NOW)).toBeNull()
+  })
+
   it('does not treat a lone background split-pane title as the focused pane', () => {
     testState.appState.runtimePaneTitlesByTabId = {
       'tab-1': { 2: 'Codex' }

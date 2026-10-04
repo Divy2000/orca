@@ -205,6 +205,39 @@ describe('running agent send targets', () => {
     ])
   })
 
+  it('keeps a working row sendable when the permission title was recorded for its sibling pane', () => {
+    const paneKey = makePaneKey(TAB_ID, LEFT_LEAF_ID)
+    const targets = deriveRunningAgentSendTargets(
+      {
+        ...state({
+          agentStatusByPaneKey: { [paneKey]: entry(paneKey, 'working') },
+          tabsByWorktree: { [WORKTREE_ID]: [tab(TAB_ID, WORKTREE_ID, 'pty-left')] },
+          terminalLayoutsByTabId: {
+            [TAB_ID]: {
+              root: {
+                type: 'split',
+                direction: 'vertical',
+                first: { type: 'leaf', leafId: LEFT_LEAF_ID },
+                second: { type: 'leaf', leafId: RIGHT_LEAF_ID }
+              },
+              activeLeafId: LEFT_LEAF_ID,
+              expandedLeafId: null,
+              ptyIdsByLeafId: { [LEFT_LEAF_ID]: 'pty-left', [RIGHT_LEAF_ID]: 'pty-right' }
+            }
+          },
+          runtimePaneTitlesByTabId: { [TAB_ID]: { 1: 'Codex - action required' } }
+        }),
+        runtimePaneTitleLeafIdsByTabId: { [TAB_ID]: { 1: RIGHT_LEAF_ID } }
+      },
+      WORKTREE_ID,
+      NOW
+    )
+
+    expect(targets.find((target) => target.paneKey === paneKey)).toMatchObject({
+      status: 'eligible'
+    })
+  })
+
   it('keeps stale agent status rows disabled when no live title proves the agent is sendable', () => {
     const stalePaneKey = makePaneKey(TAB_ID, RIGHT_LEAF_ID)
     const target = resolveRunningAgentSendTarget(

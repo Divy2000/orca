@@ -12,6 +12,10 @@ import {
 } from '../../../../shared/agent-status-types'
 import { agentVerdictDisplayMark } from '../../../../shared/agent-main-agent-verdict'
 import { applyAgentPaneActivityFlags } from '@/lib/agent-pane-activity-flags'
+import {
+  buildTerminalPaneHomeIndex,
+  selectHomedTerminalLayouts
+} from '@/lib/terminal-pane-home-index'
 
 export type WorktreeAgentActivitySummary = {
   hasPermission: boolean
@@ -56,10 +60,12 @@ export type AgentActivityInput = Pick<
 > & {
   tabsByWorktree: AgentActivityTabsByWorktree
   runtimeAgentOrchestrationByPaneKey?: AppState['runtimeAgentOrchestrationByPaneKey']
+  terminalLayoutsByTabId?: AppState['terminalLayoutsByTabId']
 }
 
 type AgentActivityCache = {
   tabsByWorktree: AgentActivityTabsByWorktree
+  homedLayouts: AppState['terminalLayoutsByTabId']
   agentStatusEpoch: number
   migrationUnsupportedByPtyId: AppState['migrationUnsupportedByPtyId']
   retainedAgentsByPaneKey: AppState['retainedAgentsByPaneKey']
@@ -80,9 +86,11 @@ function getWorktreeAgentActivitySummaries(
   state: AgentActivityInput
 ): Map<string, WorktreeAgentActivitySummary> {
   const runtimeAgentOrchestrationByPaneKey = state.runtimeAgentOrchestrationByPaneKey
+  const homedLayouts = selectHomedTerminalLayouts(state.terminalLayoutsByTabId)
   if (
     agentActivityCache &&
     agentActivityCache.tabsByWorktree === state.tabsByWorktree &&
+    agentActivityCache.homedLayouts === homedLayouts &&
     agentActivityCache.agentStatusEpoch === state.agentStatusEpoch &&
     agentActivityCache.migrationUnsupportedByPtyId === state.migrationUnsupportedByPtyId &&
     agentActivityCache.retainedAgentsByPaneKey === state.retainedAgentsByPaneKey &&
@@ -94,12 +102,8 @@ function getWorktreeAgentActivitySummaries(
   // Why: status dots render once per visible worktree. Build the tab/worktree
   // index once per store snapshot so agent pings are O(worktrees + agents),
   // not O(worktrees * agents).
-  const tabIdToWorktreeId = new Map<string, string>()
-  for (const [worktreeId, tabs] of Object.entries(state.tabsByWorktree)) {
-    for (const tab of tabs) {
-      tabIdToWorktreeId.set(tab.id, worktreeId)
-    }
-  }
+  const paneHomeIndex = buildTerminalPaneHomeIndex(state.tabsByWorktree, homedLayouts)
+  const tabIdToWorktreeId = paneHomeIndex.hostWorktreeIdByTabId
 
   const summaries = new Map<string, WorktreeAgentActivitySummary>()
   const summaryForWorktree = (worktreeId: string): WorktreeAgentActivitySummary => {
@@ -121,7 +125,12 @@ function getWorktreeAgentActivitySummaries(
       entry,
       runtimeAgentOrchestrationByPaneKey?.[paneKey]
     )
-    const worktreeId = resolveAgentStatusWorktreeId(entry, tabIdToWorktreeId, orchestration)
+    const worktreeId = resolveAgentStatusWorktreeId(
+      entry,
+      tabIdToWorktreeId,
+      orchestration,
+      paneHomeIndex.homeWorktreeIdByPaneKey
+    )
     if (!worktreeId) {
       continue
     }
@@ -146,7 +155,10 @@ function getWorktreeAgentActivitySummaries(
 
   for (const unsupported of Object.values(state.migrationUnsupportedByPtyId ?? {})) {
     const entry = migrationUnsupportedToAgentStatusEntry(unsupported)
-    const worktreeId = entry ? worktreeIdForPaneKey(entry.paneKey, tabIdToWorktreeId) : null
+    const worktreeId = entry
+      ? (paneHomeIndex.homeWorktreeIdByPaneKey.get(entry.paneKey) ??
+        worktreeIdForPaneKey(entry.paneKey, tabIdToWorktreeId))
+      : null
     if (worktreeId) {
       summaryForWorktree(worktreeId).hasPermission = true
     }
@@ -185,6 +197,7 @@ function getWorktreeAgentActivitySummaries(
 
   agentActivityCache = {
     tabsByWorktree: state.tabsByWorktree,
+    homedLayouts,
     agentStatusEpoch: state.agentStatusEpoch,
     migrationUnsupportedByPtyId: state.migrationUnsupportedByPtyId,
     retainedAgentsByPaneKey: state.retainedAgentsByPaneKey,
@@ -275,7 +288,7 @@ function withPaneId(
 
 function worktreeIdForPaneKey(
   paneKey: string | undefined,
-  tabIdToWorktreeId: Map<string, string>
+  tabIdToWorktreeId: ReadonlyMap<string, string>
 ): string | null {
   const paneIdentity = parseAgentStatusPaneIdentity(paneKey)
   return paneIdentity ? (tabIdToWorktreeId.get(paneIdentity.tabId) ?? null) : null
@@ -285,7 +298,7 @@ function addParentPaneId(
   summary: WorktreeAgentActivitySummary,
   orchestration: AgentStatusOrchestrationContext | undefined,
   worktreeId: string,
-  tabIdToWorktreeId: Map<string, string>
+  tabIdToWorktreeId: ReadonlyMap<string, string>
 ): void {
   const parentPaneIdentity = parseAgentStatusPaneIdentity(orchestration?.parentPaneKey)
   if (!parentPaneIdentity) {

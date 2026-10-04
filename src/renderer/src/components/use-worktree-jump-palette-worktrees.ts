@@ -7,9 +7,11 @@ import {
 } from '@/components/sidebar/visible-worktrees'
 import { getStructuredChatWorktreeIds } from '@/components/sidebar/visible-worktree-activity-inputs'
 import { isDefaultBranchWorkspace } from '@/components/sidebar/default-branch-workspace'
-import { sortWorktreesSmart } from '@/components/sidebar/smart-sort'
 import { buildWorktreeChecksReviewIndex } from '@/components/cmd-j/worktree-checks-review-index'
-import { getLiveAgentStatusByWorktreeId, isInactiveWorkspace } from '@/lib/worktree-activity-state'
+import { isInactiveWorkspace } from '@/lib/worktree-activity-state'
+import { usePaletteLiveAgentWorktreeIds } from './use-palette-live-agent-worktree-ids'
+import { usePaletteBrowserSortedWorktrees } from './use-palette-browser-sorted-worktrees'
+import { selectHomedTerminalLayouts } from '@/lib/terminal-pane-home-index'
 import { orderEmptyQueryWorktrees } from '@/lib/order-empty-query-worktrees'
 import {
   getWorktreePaletteSearchScope,
@@ -22,7 +24,6 @@ import {
   isWorkspaceFromOtherDevice
 } from '@/components/sidebar/workspace-creator-visibility'
 import type { Worktree } from '../../../shared/worktree/types'
-import { EMPTY_SORTED_WORKTREES } from './worktree-jump-palette-model'
 import { buildWorktreeJumpPaletteDocumentIndex } from './worktree-jump-palette-document-index'
 import { buildWorktreeJumpPaletteWorktreeMaps } from './worktree-jump-palette-worktree-maps'
 import type { WorktreeJumpPaletteWorktreesInput } from './worktree-jump-palette-worktrees-input'
@@ -54,6 +55,7 @@ export function useWorktreeJumpPaletteWorktrees({
   paletteStatusInputsActive,
   repoMap,
   runtimePaneTitlesByTabId,
+  runtimePaneTitleLeafIdsByTabId,
   migrationUnsupportedByPtyId,
   terminalLayoutsByTabId,
   repoByHostIdentity,
@@ -67,15 +69,11 @@ export function useWorktreeJumpPaletteWorktrees({
 }: WorktreeJumpPaletteWorktreesInput) {
   const hasQuery = paletteSearchQuery.length > 0
   const isLoading = repos.length > 0 && Object.keys(worktreesByRepo).length === 0
-  const worktreeIdsWithLiveAgent = useMemo(
-    () =>
-      new Set(
-        // The palette recomputes this snapshot when status inputs change; the
-        // clock intentionally reflects the render that performs that snapshot.
-        // oxlint-disable-next-line react/purity
-        getLiveAgentStatusByWorktreeId(agentStatusByPaneKey, tabsByWorktree, Date.now()).keys()
-      ),
-    [agentStatusByPaneKey, tabsByWorktree]
+  const homedTerminalLayouts = selectHomedTerminalLayouts(terminalLayoutsByTabId)
+  const worktreeIdsWithLiveAgent = usePaletteLiveAgentWorktreeIds(
+    agentStatusByPaneKey,
+    tabsByWorktree,
+    homedTerminalLayouts
   )
   const pairedDeviceIdsByEnvironment = useMemo(
     () =>
@@ -127,7 +125,8 @@ export function useWorktreeJumpPaletteWorktrees({
             ptyIdsByTabId,
             browserTabsByWorktree,
             worktreeIdsWithLiveAgent,
-            worktreeIdsWithStructuredChat
+            worktreeIdsWithStructuredChat,
+            homedTerminalLayouts
           )
         ) {
           return false
@@ -144,6 +143,7 @@ export function useWorktreeJumpPaletteWorktrees({
       hideDefaultBranchWorkspace,
       hideDetachedHeadWorkspaces,
       hideWorkspacesFromOtherDevices,
+      homedTerminalLayouts,
       pairedDeviceIdsByEnvironment,
       ptyIdsByTabId,
       repoMap,
@@ -176,24 +176,7 @@ export function useWorktreeJumpPaletteWorktrees({
     })
     return hasQuery && filterPredicate ? scope.filter(filterPredicate.matchesWorktree) : scope
   }, [allWorktrees, filterPredicate, hasQuery, switchableWorktreesForRows])
-  const browserSortedWorktrees = useMemo(() => {
-    if (!paletteStatusInputsActive) {
-      return EMPTY_SORTED_WORKTREES
-    }
-    const scope = filterPredicate
-      ? allWorktrees.filter(filterPredicate.matchesWorktree)
-      : allWorktrees
-    return sortWorktreesSmart(
-      scope,
-      tabsByWorktree,
-      repoMap,
-      agentStatusByPaneKey,
-      runtimePaneTitlesByTabId,
-      ptyIdsByTabId,
-      migrationUnsupportedByPtyId,
-      terminalLayoutsByTabId
-    )
-  }, [
+  const browserSortedWorktrees = usePaletteBrowserSortedWorktrees({
     paletteStatusInputsActive,
     allWorktrees,
     filterPredicate,
@@ -201,10 +184,11 @@ export function useWorktreeJumpPaletteWorktrees({
     repoMap,
     agentStatusByPaneKey,
     runtimePaneTitlesByTabId,
+    runtimePaneTitleLeafIdsByTabId,
     ptyIdsByTabId,
     migrationUnsupportedByPtyId,
     terminalLayoutsByTabId
-  ])
+  })
   const sortedWorktrees = useMemo(
     () =>
       hasQuery

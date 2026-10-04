@@ -183,6 +183,35 @@ describe('palette live status', () => {
     }
   )
 
+  it('given a live shell-only foreign pane then the home dot is active and the host dot inactive', async () => {
+    const foreignLeaf = '22222222-2222-4222-8222-222222222222'
+    useAppStore.setState({
+      tabsByWorktree: { 'wt-a': [], 'wt-b': [makeTerminalTab('host-tab', 'wt-b')] },
+      ptyIdsByTabId: { 'host-tab': ['pty-foreign'] },
+      terminalLayoutsByTabId: {
+        'host-tab': {
+          root: { type: 'leaf', leafId: foreignLeaf },
+          activeLeafId: foreignLeaf,
+          expandedLeafId: null,
+          ptyIdsByLeafId: { [foreignLeaf]: 'pty-foreign' },
+          homeByLeafId: {
+            [foreignLeaf]: { worktreeId: 'wt-a', sessionTabId: 'tab-a', sessionLeafId: foreignLeaf }
+          }
+        }
+      }
+    } as Partial<AppState>)
+    await act(async () => {
+      testRoot.render(
+        <PaletteLiveStatusProvider active>
+          <PaletteWorktreeStatusDot worktree={{ id: 'wt-a' }} />
+          <PaletteWorktreeStatusDot worktree={{ id: 'wt-b' }} />
+        </PaletteLiveStatusProvider>
+      )
+    })
+
+    expect(dotLabels()).toEqual(['Active', 'Inactive'])
+  })
+
   it('updates a worktree dot when the agent transitions', async () => {
     setAgentState('working')
     await render()

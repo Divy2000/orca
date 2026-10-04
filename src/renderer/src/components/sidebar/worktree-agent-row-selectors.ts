@@ -14,6 +14,10 @@ import {
 } from './worktree-agent-live-index-patch'
 import { selectWorktreeAgentOrchestration } from './worktree-agent-orchestration-index'
 import { createWorktreeRecordSelector } from '@/store/worktree-record-selector-cache'
+import {
+  buildTerminalPaneHomeIndex,
+  selectHomedTerminalLayouts
+} from '@/lib/terminal-pane-home-index'
 import type { TerminalLayoutSnapshot } from '../../../../shared/terminal-tab-types'
 
 // Why frozen and exported: card hooks return these from their inactive branch,
@@ -37,6 +41,7 @@ type WorktreeAgentRowsState = Pick<
   | 'tabsByWorktree'
 > & {
   unifiedTabsByWorktree?: AppState['unifiedTabsByWorktree']
+  terminalLayoutsByTabId?: AppState['terminalLayoutsByTabId']
 }
 
 type TabWorktreeIndexCache = {
@@ -50,6 +55,7 @@ type LiveTabWorktreeIndexCache = TabWorktreeIndexCache & {
 
 type MigrationUnsupportedByWorktreeCache = {
   tabsByWorktree: WorktreeAgentRowsState['tabsByWorktree']
+  homedLayouts: AppState['terminalLayoutsByTabId']
   migrationUnsupportedByPtyId: WorktreeAgentRowsState['migrationUnsupportedByPtyId']
   entriesByWorktree: Map<string, MigrationUnsupportedPtyEntry[]>
 }
@@ -125,27 +131,31 @@ function getLiveEntriesByWorktree(state: WorktreeAgentRowsState): Map<string, Ag
   const agentStatusByPaneKey = state.agentStatusByPaneKey ?? EMPTY_RECORD
   const tabsByWorktree = state.tabsByWorktree ?? EMPTY_RECORD
   const unifiedTabsByWorktree = state.unifiedTabsByWorktree
-  if (
+  const homedLayouts = selectHomedTerminalLayouts(state.terminalLayoutsByTabId)
+  const sameTabIndex =
     liveEntriesByWorktreeCache?.tabsByWorktree === tabsByWorktree &&
     liveEntriesByWorktreeCache.unifiedTabsByWorktree === unifiedTabsByWorktree &&
-    liveEntriesByWorktreeCache.agentStatusByPaneKey === agentStatusByPaneKey
-  ) {
+    liveEntriesByWorktreeCache.homedLayouts === homedLayouts
+  if (sameTabIndex && liveEntriesByWorktreeCache?.agentStatusByPaneKey === agentStatusByPaneKey) {
     return liveEntriesByWorktreeCache.entriesByWorktree
   }
 
   const tabIdToWorktreeId = getLiveTabIdToWorktreeId(tabsByWorktree, unifiedTabsByWorktree)
-  if (
-    liveEntriesByWorktreeCache?.tabsByWorktree === tabsByWorktree &&
-    liveEntriesByWorktreeCache.unifiedTabsByWorktree === unifiedTabsByWorktree
-  ) {
+  const homeWorktreeIdByPaneKey = buildTerminalPaneHomeIndex(
+    tabsByWorktree,
+    homedLayouts
+  ).homeWorktreeIdByPaneKey
+  if (sameTabIndex && liveEntriesByWorktreeCache) {
     const patched = patchLiveEntriesByWorktree(
       liveEntriesByWorktreeCache,
       agentStatusByPaneKey,
-      tabIdToWorktreeId
+      tabIdToWorktreeId,
+      homeWorktreeIdByPaneKey
     )
     if (patched) {
       liveEntriesByWorktreeCache = {
         tabsByWorktree,
+        homedLayouts,
         unifiedTabsByWorktree,
         agentStatusByPaneKey,
         entriesByWorktree: patched
@@ -157,7 +167,12 @@ function getLiveEntriesByWorktree(state: WorktreeAgentRowsState): Map<string, Ag
   const previous = liveEntriesByWorktreeCache?.entriesByWorktree
   const entriesByWorktree = new Map<string, AgentStatusEntry[]>()
   for (const [paneKey, entry] of Object.entries(agentStatusByPaneKey)) {
-    const worktreeId = liveEntryWorktreeId(paneKey, entry, tabIdToWorktreeId)
+    const worktreeId = liveEntryWorktreeId(
+      paneKey,
+      entry,
+      tabIdToWorktreeId,
+      homeWorktreeIdByPaneKey
+    )
     if (!worktreeId) {
       continue
     }
@@ -173,6 +188,7 @@ function getLiveEntriesByWorktree(state: WorktreeAgentRowsState): Map<string, Ag
   }
   liveEntriesByWorktreeCache = {
     tabsByWorktree,
+    homedLayouts,
     unifiedTabsByWorktree,
     agentStatusByPaneKey,
     entriesByWorktree
@@ -185,14 +201,20 @@ function getMigrationUnsupportedByWorktree(
 ): Map<string, MigrationUnsupportedPtyEntry[]> {
   const migrationUnsupportedByPtyId = state.migrationUnsupportedByPtyId ?? EMPTY_RECORD
   const tabsByWorktree = state.tabsByWorktree ?? EMPTY_RECORD
+  const homedLayouts = selectHomedTerminalLayouts(state.terminalLayoutsByTabId)
   if (
     migrationUnsupportedByWorktreeCache?.tabsByWorktree === tabsByWorktree &&
+    migrationUnsupportedByWorktreeCache.homedLayouts === homedLayouts &&
     migrationUnsupportedByWorktreeCache.migrationUnsupportedByPtyId === migrationUnsupportedByPtyId
   ) {
     return migrationUnsupportedByWorktreeCache.entriesByWorktree
   }
 
   const tabIdToWorktreeId = getTabIdToWorktreeId(tabsByWorktree)
+  const homeWorktreeIdByPaneKey = buildTerminalPaneHomeIndex(
+    tabsByWorktree,
+    homedLayouts
+  ).homeWorktreeIdByPaneKey
   const previous = migrationUnsupportedByWorktreeCache?.entriesByWorktree
   const entriesByWorktree = new Map<string, MigrationUnsupportedPtyEntry[]>()
   for (const unsupported of Object.values(migrationUnsupportedByPtyId)) {
@@ -200,7 +222,9 @@ function getMigrationUnsupportedByWorktree(
       continue
     }
     const parsed = parsePaneKey(unsupported.paneKey)
-    const worktreeId = parsed ? tabIdToWorktreeId.get(parsed.tabId) : undefined
+    const worktreeId =
+      homeWorktreeIdByPaneKey.get(unsupported.paneKey) ??
+      (parsed ? tabIdToWorktreeId.get(parsed.tabId) : undefined)
     if (!worktreeId) {
       continue
     }
@@ -216,6 +240,7 @@ function getMigrationUnsupportedByWorktree(
   }
   migrationUnsupportedByWorktreeCache = {
     tabsByWorktree,
+    homedLayouts,
     migrationUnsupportedByPtyId,
     entriesByWorktree
   }

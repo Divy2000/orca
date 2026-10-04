@@ -1,0 +1,1 @@
+- [Known local test failures](known-local-test-failures.md) — tests red on clean HEAD here (live zsh shell, chunk fuzz timeout, palette perf flake)

@@ -268,7 +268,7 @@ describe('connectPanePty', () => {
     vi.advanceTimersByTime(500)
     await flushAsyncTicks()
 
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Terminal')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Terminal', LEAF_1)
     expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', 'Terminal')
     expect(
       resolveWorktreeStatus({
@@ -328,7 +328,7 @@ describe('connectPanePty', () => {
     await flushAsyncTicks()
 
     expect(window.api.agentStatus.inferInterrupt).not.toHaveBeenCalled()
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Terminal')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Terminal', LEAF_1)
     expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', 'Terminal')
   })
 

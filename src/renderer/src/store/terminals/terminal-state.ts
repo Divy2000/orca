@@ -35,6 +35,9 @@ export type TerminalState = {
   activeTabIdByWorktree: Record<string, string | null>
   ptyIdsByTabId: Record<string, string[]>
   runtimePaneTitlesByTabId: Record<string, Record<number, string>>
+  /** The leaf each runtime pane title came from, recorded where the writer knows it; titles
+   *  without one fall back to slot-order resolution. Same lifecycle as the titles. */
+  runtimePaneTitleLeafIdsByTabId: Record<string, Record<number, string>>
   unreadTerminalTabs: Record<string, StoredAgentAttentionUnread>
   unreadTerminalPanes: Record<string, StoredAgentAttentionUnread>
   unreadAgentCompletionPanes: Record<string, StoredAgentAttentionUnread>

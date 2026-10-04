@@ -147,7 +147,12 @@ export function installShellCommandInference(session: ConnectPanePtySession): vo
     // their OSC title stuck on a working spinner. Replace only this fallback
     // title signal with a neutral terminal label so the existing process tracker
     // can still decide whether an agent TUI is truly alive.
-    session.deps.setRuntimePaneTitle(session.deps.tabId, session.pane.id, neutralTitle)
+    session.deps.setRuntimePaneTitle(
+      session.deps.tabId,
+      session.pane.id,
+      neutralTitle,
+      session.pane.leafId
+    )
     if (session.manager.getActivePane()?.id === session.pane.id) {
       session.deps.updateTabTitle(session.deps.tabId, neutralTitle)
     }

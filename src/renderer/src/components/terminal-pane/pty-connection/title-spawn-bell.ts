@@ -32,7 +32,12 @@ export function installTitleSpawnBell(session: ConnectPanePtySession): void {
     })
     const paneTitle = decision.displayTitle
     session.manager.setPaneGpuRendering(session.pane.id, decision.rendererPolicy.gpuEnabled)
-    session.deps.setRuntimePaneTitle(session.deps.tabId, session.pane.id, paneTitle)
+    session.deps.setRuntimePaneTitle(
+      session.deps.tabId,
+      session.pane.id,
+      paneTitle,
+      session.pane.leafId
+    )
     // Why: a stale-derived cleared title comes from main's unthrottled 3s
     // timer, not agent output. It must update the visible title but never
     // feed completion tracking — observeTitle would classify the cleared

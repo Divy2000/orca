@@ -13,6 +13,7 @@ import {
 import type { TerminalSlice, TerminalStoreGet, TerminalStoreSet } from './terminal-state'
 import { equalStringSets, sortedUniquePtyIds } from './terminal-pty-identities'
 import { resolveTerminalStopRuntimeEnvironmentId } from './terminal-workspace-routing'
+import { withRuntimePaneTitleLeafBinding } from './runtime-pane-title-leaf-bindings'
 
 export function createTerminalPaneHibernationActions(
   set: TerminalStoreSet,
@@ -25,6 +26,8 @@ export function createTerminalPaneHibernationActions(
         opts.expectedRuntimePtyId ? [opts.expectedRuntimePtyId] : []
       )
       const rendererShutdownPtyIds = [opts.ptyId]
+      // Why: a pane hosted in another workspace's tab records and drops its status under its home.
+      const paneWorktreeId = opts.homeWorktreeId ?? worktreeId
       const state = get()
       const runtimeEnvironmentId = resolveTerminalStopRuntimeEnvironmentId(state, worktreeId)
       // Why: pane transports emit renderer PTY ids, not raw exact-stop handles; guard only the identity that can deliver an exit callback.
@@ -47,7 +50,7 @@ export function createTerminalPaneHibernationActions(
       }
       const sleepingAgentSessionRecords = collectSleepingAgentSessionRecordsForWorktree(
         state,
-        worktreeId,
+        paneWorktreeId,
         {
           paneKeys,
           captureMode: 'completed-agent-hibernation'
@@ -55,7 +58,7 @@ export function createTerminalPaneHibernationActions(
       )
       const retainedCompletionEvidence = collectHibernatedCompletionEvidenceForWorktree(
         state,
-        worktreeId,
+        paneWorktreeId,
         paneKeys
       )
       if (!sleepingAgentSessionRecords[opts.paneKey]) {
@@ -209,6 +212,15 @@ export function createTerminalPaneHibernationActions(
             delete nextRuntimePaneTitlesByTabId[opts.tabId]
           }
         }
+        const nextRuntimePaneTitleLeafIdsByTabId =
+          nextRuntimePaneTitlesByTabId !== s.runtimePaneTitlesByTabId
+            ? withRuntimePaneTitleLeafBinding(
+                s.runtimePaneTitleLeafIdsByTabId,
+                opts.tabId,
+                numericPaneId,
+                undefined
+              )
+            : s.runtimePaneTitleLeafIdsByTabId
         const nextUnreadTerminalPanes = { ...s.unreadTerminalPanes }
         const nextUnreadAgentCompletionPanes = { ...s.unreadAgentCompletionPanes }
         const nextLastTerminalInputAtByPaneKey = { ...s.lastTerminalInputAtByPaneKey }
@@ -228,14 +240,17 @@ export function createTerminalPaneHibernationActions(
           },
           codexRestartNoticeByPtyId: nextCodexRestartNoticeByPtyId,
           ...(nextRuntimePaneTitlesByTabId !== s.runtimePaneTitlesByTabId
-            ? { runtimePaneTitlesByTabId: nextRuntimePaneTitlesByTabId }
+            ? {
+                runtimePaneTitlesByTabId: nextRuntimePaneTitlesByTabId,
+                runtimePaneTitleLeafIdsByTabId: nextRuntimePaneTitleLeafIdsByTabId
+              }
             : {}),
           unreadTerminalPanes: nextUnreadTerminalPanes,
           unreadAgentCompletionPanes: nextUnreadAgentCompletionPanes,
           lastTerminalInputAtByPaneKey: nextLastTerminalInputAtByPaneKey
         }
       })
-      get().dropHibernatedAgentStatusPane(worktreeId, opts.paneKey, {
+      get().dropHibernatedAgentStatusPane(paneWorktreeId, opts.paneKey, {
         retainedCompletionEvidence
       })
     }

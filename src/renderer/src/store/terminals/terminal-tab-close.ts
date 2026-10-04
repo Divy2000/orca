@@ -110,6 +110,7 @@ export function createTerminalTabCloseActions(
         const nextDeferredSshSessionIdsByTabId = omitByTabId(s.deferredSshSessionIdsByTabId)
         const nextPendingReconnectPtyIdByTabId = omitByTabId(s.pendingReconnectPtyIdByTabId)
         const nextRuntimePaneTitlesByTabId = omitByTabId(s.runtimePaneTitlesByTabId)
+        const nextRuntimePaneTitleLeafIdsByTabId = omitByTabId(s.runtimePaneTitleLeafIdsByTabId)
         const nextDirectSshPaneRetryByTabId = omitByTabId(s.directSshPaneRetryByTabId)
         const nextDirectSshLivePtyBindingByTabId = omitByTabId(s.directSshLivePtyBindingByTabId)
         const nextDirectSshPaneRetryHistoryByTabId = omitByTabId(s.directSshPaneRetryHistoryByTabId)
@@ -192,6 +193,7 @@ export function createTerminalTabCloseActions(
           deferredSshSessionIdsByTabId: nextDeferredSshSessionIdsByTabId,
           pendingReconnectPtyIdByTabId: nextPendingReconnectPtyIdByTabId,
           runtimePaneTitlesByTabId: nextRuntimePaneTitlesByTabId,
+          runtimePaneTitleLeafIdsByTabId: nextRuntimePaneTitleLeafIdsByTabId,
           directSshPaneRetryByTabId: nextDirectSshPaneRetryByTabId,
           directSshLivePtyBindingByTabId: nextDirectSshLivePtyBindingByTabId,
           directSshPaneRetryHistoryByTabId: nextDirectSshPaneRetryHistoryByTabId,

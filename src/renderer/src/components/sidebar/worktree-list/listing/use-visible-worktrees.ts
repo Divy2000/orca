@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useAppStore } from '@/store'
 import { getAgentStatusEpochNow } from '@/lib/agent-status-epoch-clock'
 import { getWorktreeIdsWithLiveAgent } from '@/lib/worktree-activity-state'
+import { selectHomedTerminalLayouts } from '@/lib/terminal-pane-home-index'
 import type { Repo } from '../../../../../../shared/repo-types'
 import type { WorktreeLineage } from '../../../../../../shared/worktree/lineage-types'
 import type { ExecutionHostId } from '../../../../../../shared/execution-host'
@@ -68,6 +69,9 @@ export function useVisibleSidebarWorktrees(args: {
     needsActivityMaps ? getVisibleWorktreeTerminalActivityTabs(s.tabsByWorktree) : null
   )
   const ptyIdsByTabId = useAppStore((s) => (needsActivityMaps ? s.ptyIdsByTabId : null))
+  const homedTerminalLayouts = useAppStore((s) =>
+    needsActivityMaps ? selectHomedTerminalLayouts(s.terminalLayoutsByTabId) : null
+  )
   const browserTabsByWorktree = useAppStore((s) =>
     !showSleepingWorkspaces ? getVisibleWorktreeBrowserActivityTabs(s.browserTabsByWorktree) : null
   )
@@ -86,13 +90,15 @@ export function useVisibleSidebarWorktrees(args: {
       ptyIdsByTabId,
       browserTabsByWorktree,
       worktreeIdsWithStructuredChat,
+      terminalLayoutsByTabId: homedTerminalLayouts,
       // Why snapshot on agentStatusEpoch: update membership immediately without repainting on every hook ping.
       worktreeIdsWithLiveAgent: showSleepingWorkspaces
         ? EMPTY_WORKTREE_ID_SET
         : getWorktreeIdsWithLiveAgent(
             useAppStore.getState().agentStatusByPaneKey,
             tabsByWorktree,
-            agentStatusNow
+            agentStatusNow,
+            homedTerminalLayouts
           ),
       hideDefaultBranchWorkspace,
       hideAutomationGeneratedWorkspaces,
@@ -128,6 +134,7 @@ export function useVisibleSidebarWorktrees(args: {
     repoMap,
     tabsByWorktree,
     ptyIdsByTabId,
+    homedTerminalLayouts,
     browserTabsByWorktree,
     sortedIds,
     worktreeLineageById,

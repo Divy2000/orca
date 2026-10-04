@@ -14,6 +14,8 @@ import {
 import type { TerminalStoreGet, TerminalStoreSet } from './terminal-state'
 import { copyOnWriteRecord } from '../copy-on-write-record'
 
+const EMPTY_PANE_TITLE_LEAF_IDS: Record<string, Record<number, string>> = Object.freeze({})
+
 export function commitTerminalShutdownState({
   exitGuardPtyIds,
   get,
@@ -85,6 +87,9 @@ export function commitTerminalShutdownState({
     }
 
     const runtimePaneTitlesByTabId = copyOnWriteRecord(state.runtimePaneTitlesByTabId)
+    const runtimePaneTitleLeafIdsByTabId = copyOnWriteRecord(
+      state.runtimePaneTitleLeafIdsByTabId ?? EMPTY_PANE_TITLE_LEAF_IDS
+    )
     const pendingSetupSplitByTabId = copyOnWriteRecord(state.pendingSetupSplitByTabId)
     const pendingIssueCommandSplitByTabId = copyOnWriteRecord(state.pendingIssueCommandSplitByTabId)
     const terminalLayoutsByTabId = copyOnWriteRecord(state.terminalLayoutsByTabId)
@@ -116,6 +121,7 @@ export function commitTerminalShutdownState({
       }
       if (!keepIdentifiers) {
         runtimePaneTitlesByTabId.delete(tab.id)
+        runtimePaneTitleLeafIdsByTabId.delete(tab.id)
         lastKnownRelayPtyIdByTabId.delete(tab.id)
         const layout = state.terminalLayoutsByTabId[tab.id]
         // Why the emptiness check: replacing an already-empty map with a fresh {} is
@@ -131,6 +137,7 @@ export function commitTerminalShutdownState({
       ptyIdsByTabId: ptyIdsByTabId.read(),
       lastKnownRelayPtyIdByTabId: lastKnownRelayPtyIdByTabId.read(),
       runtimePaneTitlesByTabId: runtimePaneTitlesByTabId.read(),
+      runtimePaneTitleLeafIdsByTabId: runtimePaneTitleLeafIdsByTabId.read(),
       suppressedPtyExitIds: suppressedPtyExitIds.read(),
       pendingPtyShutdownIds: pendingPtyShutdownIds.read(),
       pendingCodexPaneRestartIds: pendingCodexPaneRestartIds.read(),

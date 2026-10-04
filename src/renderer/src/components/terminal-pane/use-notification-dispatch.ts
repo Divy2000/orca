@@ -14,6 +14,7 @@ import type {
   AgentCompletionStatusSnapshot
 } from './agent-completion-coordinator-types'
 import { getNotificationWorkspaceLabels } from './terminal-notification-state'
+import { buildTerminalPaneHomeIndex } from '@/lib/terminal-pane-home-index'
 import { createTerminalAttentionSurface } from './terminal-attention-surface'
 import {
   applyAgentAttention,
@@ -68,6 +69,15 @@ export function dispatchTerminalNotification(
   event: TerminalNotificationEvent
 ): void {
   const state = useAppStore.getState()
+  // Why: a pane hosted in another workspace's tab reports to its home; visibility and
+  // liveness still resolve through the host tab it is mounted in.
+  const attributionWorktreeId =
+    (event.paneKey &&
+      buildTerminalPaneHomeIndex(
+        state.tabsByWorktree,
+        state.terminalLayoutsByTabId
+      ).homeWorktreeIdByPaneKey.get(event.paneKey)) ||
+    worktreeId
   // Why: the completion title is the live identity. If it explicitly names an
   // agent, any snapshot from another agent is stale pane-reuse residue and must
   // not lend its prompt/agentType or timing id to this notification.
@@ -153,7 +163,7 @@ export function dispatchTerminalNotification(
   const notificationId =
     event.source === 'agent-task-complete'
       ? buildAgentNotificationId({
-          worktreeId,
+          worktreeId: attributionWorktreeId,
           paneKey: event.paneKey,
           // Why: delayed hook completions may dispatch after PTY teardown has
           // removed the live row; carry the hook timing so the OS notification
@@ -167,9 +177,9 @@ export function dispatchTerminalNotification(
       {
         source: event.source,
         ...(notificationId ? { notificationId } : {}),
-        worktreeId: request.workspaceId,
+        worktreeId: attributionWorktreeId,
         paneKey: request.subjectKey ?? undefined,
-        ...getNotificationWorkspaceLabels(state, request.workspaceId, event.terminalTitle),
+        ...getNotificationWorkspaceLabels(state, attributionWorktreeId, event.terminalTitle),
         terminalTitle: event.terminalTitle,
         isActiveWorktree: request.workspaceIsActive,
         ...agentSnapshot
@@ -180,7 +190,7 @@ export function dispatchTerminalNotification(
 
   applyAgentAttention(attentionDecision, {
     unread: {
-      markWorkspaceUnread: state.markWorktreeUnread,
+      markWorkspaceUnread: () => state.markWorktreeUnread(attributionWorktreeId),
       markSubjectUnread: state.markAgentCompletionPaneUnread,
       markGroupUnread: state.markTerminalTabUnread,
       markSurfaceUnread: state.markTerminalPaneUnread

@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import { getLiveAgentStatusByWorktreeId } from '@/lib/worktree-activity-state'
+import { selectHomedTerminalLayouts } from '@/lib/terminal-pane-home-index'
 import type { HostedReviewProvider } from '../../../../shared/hosted-review'
 import type { WorkspaceCleanupCandidate } from '../../../../shared/workspace-cleanup'
 import type {
@@ -107,6 +108,7 @@ export function useWorkspaceCleanupFacetRows({
       lastVisitedAtByWorktreeId: s.lastVisitedAtByWorktreeId,
       agentStatusByPaneKey: s.agentStatusByPaneKey,
       tabsByWorktree: s.tabsByWorktree,
+      homedTerminalLayouts: selectHomedTerminalLayouts(s.terminalLayoutsByTabId),
       dismissals: s.workspaceCleanupDismissals,
       spaceWorktrees: s.workspaceSpaceAnalysis?.worktrees ?? null,
       spaceMeasurements: s.workspaceSpaceMeasurements
@@ -138,8 +140,14 @@ export function useWorkspaceCleanupFacetRows({
     [repos, sources.workspaceStatuses, worktreesByRepo]
   )
   const liveAgentStatusByWorktreeId = useMemo(
-    () => getLiveAgentStatusByWorktreeId(sources.agentStatusByPaneKey, sources.tabsByWorktree, now),
-    [now, sources.agentStatusByPaneKey, sources.tabsByWorktree]
+    () =>
+      getLiveAgentStatusByWorktreeId(
+        sources.agentStatusByPaneKey,
+        sources.tabsByWorktree,
+        now,
+        sources.homedTerminalLayouts
+      ),
+    [now, sources.agentStatusByPaneKey, sources.homedTerminalLayouts, sources.tabsByWorktree]
   )
   // Why (STA-4343): dismissals are keyed by host-qualified identity, so the keys
   // ARE identities — comparing them to a bare worktreeId never matched.

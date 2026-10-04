@@ -156,6 +156,25 @@ describe('wakeSleepingAgentsForWorktreeInBackground', () => {
     )
   })
 
+  it('given a passive record for a pane hosted in another workspace tab then it mounts the host tab', () => {
+    sleepingRecords = {
+      k1: { worktreeId: 'wt-home', paneKey: 'host-tab:leaf-1', tabId: 'host-tab' }
+    }
+    terminalTabsByWorktree = { 'wt-home': [], 'wt-host': [{ id: 'host-tab' }] }
+    isPassiveSpy.mockReturnValue(true)
+    const rec = recordEvents()
+
+    wakeSleepingAgentsForWorktreeInBackground('wt-home')
+
+    rec.stop()
+    expect(rec.events).toEqual(['wake:wt-home', 'mount:wt-host'])
+    expect(rec.mountDetails[0]?.tabIds).toEqual(['host-tab'])
+    expect(resumeSpy).toHaveBeenCalledWith(
+      'wt-home',
+      expect.objectContaining({ suppressNavigation: true })
+    )
+  })
+
   it('falls back to a whole-worktree mount when a passive record has no resolvable tab', () => {
     sleepingRecords = { k1: { worktreeId: 'wt-1', paneKey: 'not-a-pane-key' } }
     isPassiveSpy.mockReturnValue(true)

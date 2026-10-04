@@ -15,6 +15,11 @@ import {
 import type { UseTerminalPaneLifecycleDeps } from './terminal-pane-lifecycle-types'
 import { useTerminalPaneMountLifecycle } from './use-terminal-pane-mount-lifecycle'
 import { useTerminalPaneLifecycleRefs } from './use-terminal-pane-lifecycle-refs'
+import { useAppStore } from '@/store'
+import {
+  wakeHibernatedPanesForWorktree,
+  type WakeHibernatedAgentsWorktreeEventDetail
+} from './terminal-pane-hibernated-wake'
 
 export {
   applyTerminalScrollbackRowsToMountedPanes,
@@ -53,24 +58,22 @@ export function useTerminalPaneLifecycle(deps: UseTerminalPaneLifecycleDeps): vo
 
   useEffect(() => {
     const onWakeHibernatedAgents = (event: Event): void => {
-      const detail = (event as CustomEvent<{ worktreeId: string; wokenClaimKeys?: Set<string> }>)
-        .detail
-      if (!detail || detail.worktreeId !== deps.worktreeId) {
+      const detail = (event as CustomEvent<WakeHibernatedAgentsWorktreeEventDetail>).detail
+      if (!detail) {
         return
       }
-      for (const panePtyBinding of deps.panePtyBindingsRef.current.values()) {
-        const claimKey = (panePtyBinding as IDisposableWithWake).wakeHibernatedAgentIfArmed?.(
-          detail.wokenClaimKeys
-        )
-        if (claimKey) {
-          detail.wokenClaimKeys?.add(claimKey)
-        }
-      }
+      wakeHibernatedPanesForWorktree({
+        detail,
+        tabWorktreeId: deps.worktreeId,
+        layout: useAppStore.getState().terminalLayoutsByTabId[deps.tabId],
+        getLeafId: (paneId) => deps.managerRef.current?.getLeafId(paneId) ?? null,
+        bindings: deps.panePtyBindingsRef.current
+      })
     }
     window.addEventListener('orca:wake-hibernated-agents-worktree', onWakeHibernatedAgents)
     return () =>
       window.removeEventListener('orca:wake-hibernated-agents-worktree', onWakeHibernatedAgents)
-  }, [deps.worktreeId, deps.panePtyBindingsRef])
+  }, [deps.worktreeId, deps.tabId, deps.managerRef, deps.panePtyBindingsRef])
 
   useEffect(() => {
     const previousIsVisible = getPreviousVisibleForTerminalPane({
@@ -191,10 +194,6 @@ export function useTerminalPaneLifecycle(deps: UseTerminalPaneLifecycleDeps): vo
       }
     }
   }, [deps.settings?.terminalMouseHideWhileTyping, deps.managerRef, refs.mouseHideDisposablesRef])
-}
-
-type IDisposableWithWake = IDisposable & {
-  wakeHibernatedAgentIfArmed?: (claimedProviderSessions?: Set<string>) => string | null
 }
 
 type IDisposableWithVisibility = IDisposable & {

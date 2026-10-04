@@ -185,6 +185,7 @@ export function createRepoRemovalActions(
           const nextLocalOnlyScrollback = { ...s.localOnlyScrollbackByTabId }
           const nextPtyIdsByTabId = { ...s.ptyIdsByTabId }
           const nextRuntimePaneTitlesByTabId = { ...s.runtimePaneTitlesByTabId }
+          const nextRuntimePaneTitleLeafIdsByTabId = { ...s.runtimePaneTitleLeafIdsByTabId }
           for (const wId of worktreeIds) {
             delete nextTabs[wId]
           }
@@ -193,6 +194,7 @@ export function createRepoRemovalActions(
             delete nextLocalOnlyScrollback[tabId]
             delete nextPtyIdsByTabId[tabId]
             delete nextRuntimePaneTitlesByTabId[tabId]
+            delete nextRuntimePaneTitleLeafIdsByTabId[tabId]
           }
           // Why: editor state is worktree-scoped; clear the repo's open files + active-file tracking so orphans don't linger in the session save.
           const worktreeIdSet = new Set(worktreeIds)
@@ -246,6 +248,7 @@ export function createRepoRemovalActions(
             tabsByWorktree: nextTabs,
             ptyIdsByTabId: nextPtyIdsByTabId,
             runtimePaneTitlesByTabId: nextRuntimePaneTitlesByTabId,
+            runtimePaneTitleLeafIdsByTabId: nextRuntimePaneTitleLeafIdsByTabId,
             terminalLayoutsByTabId: nextLayouts,
             localOnlyScrollbackByTabId: nextLocalOnlyScrollback,
             activeTabId: s.activeTabId && killedTabIds.has(s.activeTabId) ? null : s.activeTabId,

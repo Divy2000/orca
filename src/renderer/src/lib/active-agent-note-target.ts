@@ -48,6 +48,7 @@ export type ActiveTerminalNoteTargetState = {
     | undefined
   >
   runtimePaneTitlesByTabId?: Record<string, Record<number, string> | undefined>
+  runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string> | undefined>
   agentStatusByPaneKey?: Record<string, AgentStatusEntry | undefined>
   settings: Parameters<typeof getActiveRuntimeTarget>[0]
 } & Pick<WorktreeRuntimeOwnerState, 'repos' | 'worktreesByRepo'>
@@ -229,7 +230,8 @@ function getFocusedRuntimePaneTitle(
   return resolveRuntimePaneTitleForLeaf(
     state.terminalLayoutsByTabId[noteTarget.tabId],
     state.runtimePaneTitlesByTabId?.[noteTarget.tabId],
-    noteTarget.leafId
+    noteTarget.leafId,
+    state.runtimePaneTitleLeafIdsByTabId?.[noteTarget.tabId]
   )
 }
 

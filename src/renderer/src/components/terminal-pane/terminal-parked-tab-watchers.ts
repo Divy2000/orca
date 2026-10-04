@@ -142,14 +142,16 @@ function reconcileParkedTabWatchers(
       const paneId = entry.paneIdByPtyId.get(ptyId)
       const title =
         paneId === undefined ? undefined : state.runtimePaneTitlesByTabId[tab.id]?.[paneId]
-      return paneId !== undefined && title !== undefined ? [{ paneId, title }] : []
+      const leafId =
+        paneId === undefined ? undefined : state.runtimePaneTitleLeafIdsByTabId[tab.id]?.[paneId]
+      return paneId !== undefined && title !== undefined ? [{ paneId, title, leafId }] : []
     })
     for (const paneId of reconciliation.retiredPaneIds) {
       state.clearRuntimePaneTitle(tab.id, paneId)
     }
     disposeParkedTabWatchers(tab.id)
-    for (const { paneId, title } of retainedTitles) {
-      useAppStore.getState().setRuntimePaneTitle(tab.id, paneId, title)
+    for (const { paneId, title, leafId } of retainedTitles) {
+      useAppStore.getState().setRuntimePaneTitle(tab.id, paneId, title, leafId)
     }
     startParkedTabWatchers(worktreeId, tab, restoreTitleOnRegister)
     return

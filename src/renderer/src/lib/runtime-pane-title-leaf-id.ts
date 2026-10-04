@@ -57,11 +57,15 @@ export function collectRuntimePaneLeafIds(
   return [...collectRuntimePaneLeafIds(node.first), ...collectRuntimePaneLeafIds(node.second)]
 }
 
+/** The leaf each runtime pane title of one tab was written for (store `runtimePaneTitleLeafIdsByTabId`). */
+export type RuntimePaneTitleLeafIds = Readonly<Record<number, string>> | undefined
+
 export function resolveRuntimePaneTitleLeafId(
   tabLayout: { root?: TerminalLayoutSnapshot['root'] } | undefined,
-  runtimePaneId: string
+  runtimePaneId: string,
+  paneTitleLeafIds?: RuntimePaneTitleLeafIds
 ): string | null {
-  return resolveRuntimePaneTitleLeafIdFromRoot(tabLayout?.root, runtimePaneId)
+  return resolveRuntimePaneTitleLeafIdFromRoot(tabLayout?.root, runtimePaneId, paneTitleLeafIds)
 }
 
 /**
@@ -73,15 +77,18 @@ export function resolveRuntimePaneTitleLeafId(
 export function resolveRuntimePaneTitleForLeaf(
   tabLayout: { root?: TerminalLayoutSnapshot['root'] } | undefined,
   paneTitles: Record<number, string> | undefined,
-  leafId: string
+  leafId: string,
+  paneTitleLeafIds?: RuntimePaneTitleLeafIds
 ): string | null {
-  return resolveRuntimePaneTitleLeafResolution(tabLayout, paneTitles, leafId).title
+  return resolveRuntimePaneTitleLeafResolution(tabLayout, paneTitles, leafId, paneTitleLeafIds)
+    .title
 }
 
 export function resolveRuntimePaneTitleLeafResolution(
   tabLayout: { root?: TerminalLayoutSnapshot['root'] } | undefined,
   paneTitles: Record<number, string> | undefined,
-  leafId: string
+  leafId: string,
+  paneTitleLeafIds?: RuntimePaneTitleLeafIds
 ): RuntimePaneTitleLeafResolution {
   if (!paneTitles) {
     return { title: null, hasAnyPaneTitle: false }
@@ -105,7 +112,7 @@ export function resolveRuntimePaneTitleLeafResolution(
       hasOnePaneTitle = true
     }
 
-    if (resolveRuntimePaneTitleLeafId(tabLayout, runtimePaneId) === leafId) {
+    if (resolveRuntimePaneTitleLeafId(tabLayout, runtimePaneId, paneTitleLeafIds) === leafId) {
       return { title, hasAnyPaneTitle: true }
     }
   }
@@ -119,12 +126,21 @@ export function resolveRuntimePaneTitleLeafResolution(
   return { title: null, hasAnyPaneTitle: hasOnePaneTitle }
 }
 
+/**
+ * The leaf a runtime pane title belongs to. The title writer's recorded leaf wins; replay
+ * creation order is only a fallback for titles written without one (legacy or parked data).
+ */
 export function resolveRuntimePaneTitleLeafIdFromRoot(
   root: TerminalPaneLayoutNode | null | undefined,
-  runtimePaneId: string
+  runtimePaneId: string,
+  paneTitleLeafIds?: RuntimePaneTitleLeafIds
 ): string | null {
   if (isTerminalLeafId(runtimePaneId)) {
     return runtimePaneId
+  }
+  const boundLeafId = paneTitleLeafIds?.[Number(runtimePaneId)]
+  if (boundLeafId) {
+    return boundLeafId
   }
   const numericPaneId = Number(runtimePaneId)
   if (!Number.isInteger(numericPaneId) || numericPaneId < FIRST_PANE_ID) {
@@ -156,4 +172,51 @@ export function resolveRuntimePaneTitleLeafIdFromSparseSlots(args: {
     .filter(([, boundPtyId]) => boundPtyId === ptyId)
     .map(([leafId]) => leafId)
   return boundLeafIds.length === 1 ? boundLeafIds[0] : null
+}
+
+/**
+ * The leaf a runtime pane title belongs to: the writer's recorded leaf binding when one exists,
+ * else by slot or PTY binding alone — the single leaf, a
+ * parked `-(leafIndex + 1)` slot, a dense creation-order id, or a sparse id bound through the
+ * tab's live PTYs. Null when none places it; callers decide whether to guess further.
+ */
+export function resolveRuntimePaneTitleSlotLeafId(args: {
+  layout: Pick<TerminalLayoutSnapshot, 'root' | 'ptyIdsByLeafId'> | undefined
+  leafIds: string[]
+  ptyIds: string[]
+  liveSlotIds: number[]
+  liveSlotsAreDense: boolean
+  paneId: number
+  /** The leaves the title writers recorded; slot order is only a fallback for legacy titles. */
+  paneTitleLeafIds?: RuntimePaneTitleLeafIds
+}): string | null {
+  const boundLeafId = args.paneTitleLeafIds?.[args.paneId]
+  if (boundLeafId) {
+    return boundLeafId
+  }
+  if (args.leafIds.length === 1) {
+    return args.leafIds[0]
+  }
+  if (args.paneId < FIRST_PANE_ID) {
+    // Parked slots are defined off the in-order leaf list, so invert that definition.
+    return args.leafIds[-args.paneId - 1] ?? null
+  }
+  if (args.liveSlotsAreDense) {
+    const creationOrderLeafId = resolveRuntimePaneTitleLeafIdFromRoot(
+      args.layout?.root,
+      String(args.paneId)
+    )
+    if (creationOrderLeafId) {
+      return creationOrderLeafId
+    }
+  }
+  // After an in-session close, PaneManager ids are sparse while the tab's live
+  // PTYs retain their relative order. Use the durable PTY-to-leaf bindings to
+  // recover the exact leaf instead of assigning a survivor by layout position.
+  return resolveRuntimePaneTitleLeafIdFromSparseSlots({
+    layout: args.layout,
+    paneId: args.paneId,
+    liveSlotIds: args.liveSlotIds,
+    ptyIds: args.ptyIds
+  })
 }

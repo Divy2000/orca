@@ -79,6 +79,23 @@ function getSleepingRecordTabId(record: SleepingAgentSessionRecord): string | nu
   )
 }
 
+/** The workspace whose tab list holds `tabId`; the record's own workspace when none does. */
+function resolveTabMountWorktreeId(
+  tabsByWorktree: Record<string, readonly { id: string }[]>,
+  tabId: string,
+  recordWorktreeId: string
+): string {
+  if (tabsByWorktree[recordWorktreeId]?.some((tab) => tab.id === tabId)) {
+    return recordWorktreeId
+  }
+  for (const [ownerWorktreeId, tabs] of Object.entries(tabsByWorktree)) {
+    if (tabs.some((tab) => tab.id === tabId)) {
+      return ownerWorktreeId
+    }
+  }
+  return recordWorktreeId
+}
+
 function dispatchBackgroundMount(worktreeId: string, tabIds: readonly string[] | undefined): void {
   requestBackgroundTerminalWorktreeMount({ worktreeId, ...(tabIds ? { tabIds } : {}) })
 }
@@ -184,8 +201,11 @@ export function wakeSleepingAgentsForWorktreeInBackground(worktreeId: string): v
   // Why: only a passive completed-hibernation record has a not-yet-mounted pane
   // that needs a fresh-connect cold-restore (step b). Non-passive records are
   // recovered by step (c) into a fresh tab, mounted in step (d).
-  const passiveTabIds = new Set<string>()
+  // Why: a pane hosted in another workspace's tab keeps its record under its home, but only
+  // the host workspace can mount that tab.
+  const passiveTabIdsByMountWorktree = new Map<string, Set<string>>()
   let hasUntargetablePassiveRecord = false
+  const tabsByWorktree = useAppStore.getState().tabsByWorktree
   // Why: a workspace the user explicitly slept must not respawn every finished agent because a
   // phone opened it. Those panes cold-restore `--resume` when their own tab is opened, which is
   // also what the desktop does (#11598). Filtering before canonicalization keeps a lazy record
@@ -196,18 +216,22 @@ export function wakeSleepingAgentsForWorktreeInBackground(worktreeId: string): v
   for (const record of getCanonicalPassiveWakeRecords(backgroundWakeRecords, wokenClaimKeys)) {
     const tabId = getSleepingRecordTabId(record)
     if (tabId) {
-      passiveTabIds.add(tabId)
+      const mountWorktreeId = resolveTabMountWorktreeId(tabsByWorktree, tabId, worktreeId)
+      const tabIds = passiveTabIdsByMountWorktree.get(mountWorktreeId) ?? new Set<string>()
+      passiveTabIdsByMountWorktree.set(mountWorktreeId, tabIds.add(tabId))
     } else {
       hasUntargetablePassiveRecord = true
     }
   }
-  if (passiveTabIds.size > 0 || hasUntargetablePassiveRecord) {
+  if (hasUntargetablePassiveRecord) {
     // Why: a record whose tab cannot be resolved falls back to the untargeted
     // whole-worktree mount rather than silently never waking.
-    dispatchBackgroundMount(
-      worktreeId,
-      hasUntargetablePassiveRecord ? undefined : [...passiveTabIds]
-    )
+    dispatchBackgroundMount(worktreeId, undefined)
+  }
+  for (const [mountWorktreeId, tabIds] of passiveTabIdsByMountWorktree) {
+    if (!hasUntargetablePassiveRecord || mountWorktreeId !== worktreeId) {
+      dispatchBackgroundMount(mountWorktreeId, [...tabIds])
+    }
   }
   resumeSleepingAgentSessionsForWorktree(worktreeId, {
     suppressNavigation: true,

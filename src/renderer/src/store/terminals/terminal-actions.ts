@@ -116,7 +116,7 @@ export type TerminalActions = {
   ) => void
   setGeneratedTabTitlesFromAgentPrompts: (updates: readonly GeneratedTabTitleUpdate[]) => void
   clearTabLaunchAgent: (tabId: string) => void
-  setRuntimePaneTitle: (tabId: string, paneId: number, title: string) => void
+  setRuntimePaneTitle: (tabId: string, paneId: number, title: string, leafId?: string) => void
   clearRuntimePaneTitle: (tabId: string, paneId: number) => void
   markTerminalTabUnread: (tabId: string, reason: AgentAttentionUnreadReason) => void
   markTerminalPaneUnread: (paneKey: string, reason: AgentAttentionUnreadReason) => void
@@ -168,6 +168,8 @@ export type TerminalActions = {
       leafId: string
       ptyId: string
       expectedRuntimePtyId?: string
+      /** The pane's home when its tab belongs to `worktreeId` but the pane does not. */
+      homeWorktreeId?: string
     }
   ) => Promise<void>
   suppressPtyExit: (ptyId: string) => void

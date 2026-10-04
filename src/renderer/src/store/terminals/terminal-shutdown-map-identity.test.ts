@@ -50,12 +50,16 @@ function buildState(overrides: Partial<AppState> = {}): AppState {
   } as unknown as AppState
 }
 
-function commit(state: AppState, exitGuardPtyIds: readonly string[] = []): AppState {
+function commit(
+  state: AppState,
+  exitGuardPtyIds: readonly string[] = [],
+  keepIdentifiers = true
+): AppState {
   let current = state
   commitTerminalShutdownState({
     exitGuardPtyIds,
     get: (() => current) as never,
-    keepIdentifiers: true,
+    keepIdentifiers,
     retainedCompletionEvidence: [],
     set: ((update: unknown) => {
       const patch =
@@ -105,5 +109,19 @@ describe('terminal shutdown map identity', () => {
     expect(after.suppressedPtyExitIds['pty-1']).toBe(true)
     expect('pty-1' in after.pendingPtyShutdownIds).toBe(false)
     expect('pty-1' in after.codexRestartNoticeByPtyId).toBe(false)
+  })
+
+  it('drops pane title leaf bindings with the titles when identifiers are not kept', () => {
+    const before = buildState({
+      tabsByWorktree: { [WORKTREE]: [{ ...tab, title: 'Terminal 1' }] },
+      runtimePaneTitlesByTabId: { [TAB_ID]: { 2: '⠋ Codex' } },
+      runtimePaneTitleLeafIdsByTabId: { [TAB_ID]: { 2: 'leaf-b' }, 'tab-other': { 1: 'leaf-o' } }
+    } as unknown as Partial<AppState>)
+
+    const kept = commit(before, [], true)
+    const dropped = commit(before, [], false)
+
+    expect(kept.runtimePaneTitleLeafIdsByTabId).toBe(before.runtimePaneTitleLeafIdsByTabId)
+    expect(dropped.runtimePaneTitleLeafIdsByTabId).toEqual({ 'tab-other': { 1: 'leaf-o' } })
   })
 })

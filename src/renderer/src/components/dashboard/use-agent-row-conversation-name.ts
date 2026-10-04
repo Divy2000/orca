@@ -52,7 +52,8 @@ export function useAgentRowConversationName(agent: DashboardAgentRow): string | 
       : resolveAgentRowPaneLiveTitle(
           s.terminalLayoutsByTabId?.[agent.tab.id],
           s.runtimePaneTitlesByTabId?.[agent.tab.id],
-          ownLeafId
+          ownLeafId,
+          s.runtimePaneTitleLeafIdsByTabId?.[agent.tab.id]
         )
   )
   // Why: synthetic and same-tab child rows do not own the parent tab's name.

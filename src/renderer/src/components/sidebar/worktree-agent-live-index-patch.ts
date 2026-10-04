@@ -6,6 +6,7 @@ import { isWebTerminalSurfaceTabId } from '../../../../shared/terminal-surface-i
 
 export type LiveEntriesByWorktreeCache = {
   tabsByWorktree: AppState['tabsByWorktree']
+  homedLayouts: AppState['terminalLayoutsByTabId']
   unifiedTabsByWorktree: AppState['unifiedTabsByWorktree'] | undefined
   agentStatusByPaneKey: AppState['agentStatusByPaneKey']
   entriesByWorktree: Map<string, AgentStatusEntry[]>
@@ -25,7 +26,8 @@ export function recordLiveEntriesFullRebuild(): void {
 export function liveEntryWorktreeId(
   paneKey: string,
   entry: AgentStatusEntry,
-  tabIdToWorktreeId: Map<string, string>
+  tabIdToWorktreeId: Map<string, string>,
+  homeWorktreeIdByPaneKey?: ReadonlyMap<string, string>
 ): string | undefined {
   const parsed = parsePaneKey(paneKey)
   if (!parsed) {
@@ -35,6 +37,10 @@ export function liveEntryWorktreeId(
   const remote = Boolean(entry.connectionId) || isWebTerminalSurfaceTabId(parsed.tabId)
   if (remote) {
     return resolveAgentStatusWorktreeId(entry, tabIdToWorktreeId) ?? undefined
+  }
+  const homeWorktreeId = homeWorktreeIdByPaneKey?.get(paneKey)
+  if (homeWorktreeId) {
+    return homeWorktreeId
   }
   return tabWorktreeId ?? (entry.state === 'done' && !remote ? undefined : entry.worktreeId)
 }
@@ -60,7 +66,8 @@ export function liveEntryWorktreeId(
 export function patchLiveEntriesByWorktree(
   cache: LiveEntriesByWorktreeCache,
   agentStatusByPaneKey: AppState['agentStatusByPaneKey'],
-  tabIdToWorktreeId: Map<string, string>
+  tabIdToWorktreeId: Map<string, string>,
+  homeWorktreeIdByPaneKey: ReadonlyMap<string, string>
 ): Map<string, AgentStatusEntry[]> | null {
   const previousMap = cache.agentStatusByPaneKey
   const changed: { paneKey: string; entry: AgentStatusEntry }[] = []
@@ -96,7 +103,12 @@ export function patchLiveEntriesByWorktree(
   const entriesByWorktree = new Map(cache.entriesByWorktree)
   const clonedBuckets = new Set<string>()
   for (const { paneKey, entry } of changed) {
-    const worktreeId = liveEntryWorktreeId(paneKey, entry, tabIdToWorktreeId)
+    const worktreeId = liveEntryWorktreeId(
+      paneKey,
+      entry,
+      tabIdToWorktreeId,
+      homeWorktreeIdByPaneKey
+    )
     if (!worktreeId) {
       continue
     }

@@ -14,6 +14,7 @@ export type NoteSendAppState = {
   tabsByWorktree: Record<string, { id: string; launchAgent?: string }[]>
   ptyIdsByTabId: Record<string, string[]>
   runtimePaneTitlesByTabId: Record<string, Record<number, string>>
+  runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string>>
   terminalLayoutsByTabId: Record<
     string,
     {

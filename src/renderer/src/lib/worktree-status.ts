@@ -29,6 +29,8 @@ type WorktreeStatusHeuristicOptions = {
   stalePaneIdsByTabId?: Record<string, ReadonlySet<string>>
   terminalLayoutsByTabId?: Record<string, TerminalLayoutSnapshot | undefined>
   terminalLayoutRootsByTabId?: Record<string, TerminalPaneLayoutNode | null | undefined>
+  /** The leaf each runtime pane title was written for; preferred over replay order. */
+  runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string>>
 }
 
 const STATUS_LABELS: Record<WorktreeStatus, string> = {
@@ -90,7 +92,11 @@ function tabHasStatus(
         status === 'permission' && isSyntheticAgentPermissionTitle(title)
           ? permissionPaneIds
           : freshPaneIds
-      const leafId = resolveRuntimePaneTitleLeafIdFromRoot(tabLayoutRoot, runtimePaneId)
+      const leafId = resolveRuntimePaneTitleLeafIdFromRoot(
+        tabLayoutRoot,
+        runtimePaneId,
+        options.runtimePaneTitleLeafIdsByTabId?.[tab.id]
+      )
       // Why: runtime titles can precede layout hydration (SSH/replay); with one title and one agent row, prefer that row over a stale spinner.
       const hasSingleUnmappedAgentStatusPane =
         leafId === null && agentStatusPaneIds?.size === 1 && paneTitleEntries.length === 1
@@ -180,6 +186,7 @@ export function resolveWorktreeStatus(args: {
   stalePaneIdsByTabId?: Record<string, ReadonlySet<string>>
   terminalLayoutsByTabId?: Record<string, TerminalLayoutSnapshot | undefined>
   terminalLayoutRootsByTabId?: Record<string, TerminalPaneLayoutNode | null | undefined>
+  runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string>>
   hasPermission: boolean
   hasLiveWorking: boolean
   hasLiveMonitoring?: boolean
@@ -198,7 +205,8 @@ export function resolveWorktreeStatus(args: {
       agentStatusPaneIdsByTabId: args.agentStatusPaneIdsByTabId,
       stalePaneIdsByTabId: args.stalePaneIdsByTabId,
       terminalLayoutsByTabId: args.terminalLayoutsByTabId,
-      terminalLayoutRootsByTabId: args.terminalLayoutRootsByTabId
+      terminalLayoutRootsByTabId: args.terminalLayoutRootsByTabId,
+      runtimePaneTitleLeafIdsByTabId: args.runtimePaneTitleLeafIdsByTabId
     }
   )
   if (args.hasPermission) {

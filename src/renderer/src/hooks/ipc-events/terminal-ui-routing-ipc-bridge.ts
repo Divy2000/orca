@@ -6,6 +6,10 @@ import {
 } from '@/components/terminal-pane/terminal-pane-split-request-routing'
 import { hasRegisteredRuntimeTerminalTab } from '@/runtime/sync-runtime-graph'
 import { activateTabAndFocusPane } from '@/lib/activate-tab-and-focus-pane'
+import {
+  buildTerminalPaneHomeIndex,
+  resolvePaneNavigationWorktreeId
+} from '@/lib/terminal-pane-home-index'
 import { useAppStore } from '../../store'
 import type { AppState } from '../../store/types'
 import { resolveBrowserSessionTabTarget } from './browser-session-tab-target'
@@ -69,9 +73,18 @@ function resolveSplitTargetWorktreeId(request: RuntimeTerminalSplitRequest): str
   if (evidence.ambiguous) {
     return null
   }
-  if (request.worktreeId) {
-    if (evidence.owners.has(request.worktreeId)) {
-      return request.worktreeId
+  // Why: main names a foreign pane by its home; the split lands in the host tab that mounts it.
+  const hintedWorktreeId = request.worktreeId
+    ? resolvePaneNavigationWorktreeId(
+        buildTerminalPaneHomeIndex(state.tabsByWorktree, state.terminalLayoutsByTabId),
+        request.tabId,
+        request.sourceLeafId,
+        request.worktreeId
+      )
+    : undefined
+  if (hintedWorktreeId) {
+    if (evidence.owners.has(hintedWorktreeId)) {
+      return hintedWorktreeId
     }
     // A tab seen under another owner makes the hint stale; do not cross-route it.
     if (evidence.owners.size > 0) {
@@ -79,7 +92,7 @@ function resolveSplitTargetWorktreeId(request: RuntimeTerminalSplitRequest): str
     }
     // During startup the ownership rows can hydrate after this IPC event. Keep the
     // explicit host hint so the bounded replay queue can wake the right worktree.
-    return request.worktreeId
+    return hintedWorktreeId
   }
   return evidence.owners.size === 1 ? [...evidence.owners][0]! : null
 }
@@ -92,6 +105,10 @@ export function routeRuntimeTerminalSplitRequest(request: RuntimeTerminalSplitRe
   const detail: SplitTerminalPaneDetail = {
     tabId: request.tabId,
     worktreeId,
+    // Why: the hint named a foreign source's home; the routed target is its host tab.
+    ...(request.worktreeId && request.worktreeId !== worktreeId
+      ? { homeWorktreeId: request.worktreeId }
+      : {}),
     paneRuntimeId: request.paneRuntimeId,
     direction: request.direction,
     command: request.command,
@@ -120,13 +137,20 @@ export function registerTerminalUiRoutingIpcBridge(unsubs: (() => void)[]): void
     window.api.ui.onFocusTerminal(
       ({
         tabId,
-        worktreeId,
+        worktreeId: requestedWorktreeId,
         leafId,
         ackPaneKeyOnSuccess,
         flashFocusedPane,
         scrollToBottomIfOutputSinceLastView
       }) => {
         const store = useAppStore.getState()
+        // Why: callers name a foreign pane by its home; the pane itself is mounted in its host tab.
+        const worktreeId = resolvePaneNavigationWorktreeId(
+          buildTerminalPaneHomeIndex(store.tabsByWorktree, store.terminalLayoutsByTabId),
+          tabId,
+          leafId,
+          requestedWorktreeId
+        )
         activateTerminalInitiatedWorktree(store, worktreeId)
         store.setActiveTab(tabId)
         store.revealWorktreeInSidebar(worktreeId)

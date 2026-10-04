@@ -119,7 +119,7 @@ export function startParkedTerminalByteWatcher(
     onTitleChange: (title: string): void => {
       const state = useAppStore.getState()
       wroteRuntimeTitleSlot = true
-      state.setRuntimePaneTitle(tabId, paneId, title)
+      state.setRuntimePaneTitle(tabId, paneId, title, options.leafId)
       if (drivesTabTitle) {
         state.updateTabTitle(tabId, title)
       }

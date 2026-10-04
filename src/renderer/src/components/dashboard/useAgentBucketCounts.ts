@@ -23,6 +23,7 @@ export type AgentBucketCountState = Pick<
   | 'terminalLayoutsByTabId'
   | 'ptyIdsByTabId'
   | 'runtimePaneTitlesByTabId'
+  | 'runtimePaneTitleLeafIdsByTabId'
   | 'paneForegroundAgentByPaneKey'
   | 'folderWorkspaces'
   | 'acknowledgedAgentsByPaneKey'
@@ -61,6 +62,7 @@ export function selectAgentBucketCountState(s: AppState): AgentBucketCountState 
     previous.terminalLayoutsByTabId === s.terminalLayoutsByTabId &&
     previous.ptyIdsByTabId === s.ptyIdsByTabId &&
     previous.runtimePaneTitlesByTabId === s.runtimePaneTitlesByTabId &&
+    previous.runtimePaneTitleLeafIdsByTabId === s.runtimePaneTitleLeafIdsByTabId &&
     previous.paneForegroundAgentByPaneKey === s.paneForegroundAgentByPaneKey &&
     previous.folderWorkspaces === s.folderWorkspaces &&
     previous.acknowledgedAgentsByPaneKey === s.acknowledgedAgentsByPaneKey &&
@@ -80,6 +82,7 @@ export function selectAgentBucketCountState(s: AppState): AgentBucketCountState 
     terminalLayoutsByTabId: s.terminalLayoutsByTabId,
     ptyIdsByTabId: s.ptyIdsByTabId,
     runtimePaneTitlesByTabId: s.runtimePaneTitlesByTabId,
+    runtimePaneTitleLeafIdsByTabId: s.runtimePaneTitleLeafIdsByTabId,
     paneForegroundAgentByPaneKey: s.paneForegroundAgentByPaneKey,
     folderWorkspaces: s.folderWorkspaces,
     acknowledgedAgentsByPaneKey: s.acknowledgedAgentsByPaneKey,

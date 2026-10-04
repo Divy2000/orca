@@ -12,6 +12,15 @@ import {
 import { isExplicitAgentStatusFresh } from '@/lib/agent-status'
 import { getLiveAgentStatusByWorktreeId } from '@/lib/worktree-activity-state'
 import {
+  buildTerminalPaneHomeIndex,
+  type TerminalPaneHomeIndex
+} from '@/lib/terminal-pane-home-index'
+import {
+  collectHomedPaneStatusInputs,
+  omitForeignPanePtyIds,
+  omitForeignPaneTitles
+} from '@/lib/terminal-host-native-pane-inputs'
+import {
   getWorktreeStatus,
   getWorktreeStatusLabel,
   type WorktreeStatus
@@ -43,6 +52,10 @@ type PaletteLiveStatus = {
   agentStatusPaneIdsByTabId: Record<string, ReadonlySet<string>>
   stalePaneIdsByTabId: Record<string, ReadonlySet<string>>
   paneSources: TabPaneInputSources
+  /** Worktree dots read these: panes a tab only hosts report to their home, not the tab owner. */
+  hostNativePaneSources: Pick<TabPaneInputSources, 'ptyIdsByTabId' | 'runtimePaneTitlesByTabId'>
+  paneHomeIndex: TerminalPaneHomeIndex
+  runtimePaneTitleLeafIdsByTabId: Record<string, Record<number, string>>
   tabsByWorktree: Record<string, TerminalTab[]>
   browserTabsByWorktree: Record<string, BrowserWorkspace[]>
   unreadTerminalTabs: Record<string, true>
@@ -66,6 +79,7 @@ export function PaletteLiveStatusProvider({
   const {
     agentStatusByPaneKey,
     runtimePaneTitlesByTabId,
+    runtimePaneTitleLeafIdsByTabId,
     ptyIdsByTabId,
     terminalLayoutsByTabId,
     tabsByWorktree,
@@ -79,6 +93,7 @@ export function PaletteLiveStatusProvider({
         ? {
             agentStatusByPaneKey: s.agentStatusByPaneKey,
             runtimePaneTitlesByTabId: s.runtimePaneTitlesByTabId,
+            runtimePaneTitleLeafIdsByTabId: s.runtimePaneTitleLeafIdsByTabId,
             ptyIdsByTabId: s.ptyIdsByTabId,
             terminalLayoutsByTabId: s.terminalLayoutsByTabId,
             tabsByWorktree: s.tabsByWorktree,
@@ -100,11 +115,14 @@ export function PaletteLiveStatusProvider({
       migrationUnsupportedByPtyId
     )
     const livePaneIds = buildLiveAgentStatusPaneIdsByTabId(entriesByTabId, now)
+    const paneHomeIndex = buildTerminalPaneHomeIndex(tabsByWorktree, terminalLayoutsByTabId)
+    const foreignLeafIds = paneHomeIndex.foreignLeafIdsByTabId
     return {
       liveAgentStatusByWorktreeId: getLiveAgentStatusByWorktreeId(
         agentStatusByPaneKey,
         tabsByWorktree,
-        now
+        now,
+        terminalLayoutsByTabId
       ),
       agentStatusPaneIdsByTabId: livePaneIds.paneIdsByTabId,
       stalePaneIdsByTabId: livePaneIds.stalePaneIdsByTabId,
@@ -112,8 +130,21 @@ export function PaletteLiveStatusProvider({
         entriesByTabId,
         ptyIdsByTabId,
         runtimePaneTitlesByTabId,
-        terminalLayoutsByTabId
+        terminalLayoutsByTabId,
+        runtimePaneTitleLeafIdsByTabId
       },
+      hostNativePaneSources: {
+        ptyIdsByTabId: omitForeignPanePtyIds(ptyIdsByTabId, terminalLayoutsByTabId, foreignLeafIds),
+        runtimePaneTitlesByTabId: omitForeignPaneTitles(
+          runtimePaneTitlesByTabId,
+          terminalLayoutsByTabId,
+          foreignLeafIds,
+          ptyIdsByTabId,
+          runtimePaneTitleLeafIdsByTabId
+        )
+      },
+      paneHomeIndex,
+      runtimePaneTitleLeafIdsByTabId,
       tabsByWorktree,
       browserTabsByWorktree,
       unreadTerminalTabs,
@@ -127,6 +158,7 @@ export function PaletteLiveStatusProvider({
     migrationUnsupportedByPtyId,
     ptyIdsByTabId,
     runtimePaneTitlesByTabId,
+    runtimePaneTitleLeafIdsByTabId,
     statusEpoch,
     tabsByWorktree,
     terminalLayoutsByTabId,
@@ -180,6 +212,7 @@ function buildLiveAgentStatusPaneIdsByTabId(
 const EMPTY_LIVE_INPUTS = Object.freeze({
   agentStatusByPaneKey: {},
   runtimePaneTitlesByTabId: {},
+  runtimePaneTitleLeafIdsByTabId: {},
   ptyIdsByTabId: {},
   terminalLayoutsByTabId: {},
   tabsByWorktree: {},
@@ -206,16 +239,29 @@ export function PaletteWorktreeStatusDot({
   if (!live) {
     return null
   }
-  const status = getWorktreeStatus(
-    live.tabsByWorktree[worktree.id] ?? [],
-    live.browserTabsByWorktree[worktree.id] ?? [],
+  const tabs = live.tabsByWorktree[worktree.id] ?? []
+  const own = live.hostNativePaneSources
+  const homed = collectHomedPaneStatusInputs(
+    live.paneHomeIndex,
+    worktree.id,
+    live.paneSources.terminalLayoutsByTabId,
     live.paneSources.ptyIdsByTabId,
     live.paneSources.runtimePaneTitlesByTabId,
+    live.runtimePaneTitleLeafIdsByTabId
+  )
+  const status = getWorktreeStatus(
+    homed ? [...tabs, ...homed.tabs] : tabs,
+    live.browserTabsByWorktree[worktree.id] ?? [],
+    homed ? { ...own.ptyIdsByTabId, ...homed.ptyIdsByTabId } : own.ptyIdsByTabId,
+    homed
+      ? { ...own.runtimePaneTitlesByTabId, ...homed.runtimePaneTitlesByTabId }
+      : own.runtimePaneTitlesByTabId,
     {
       liveAgentStatus: live.liveAgentStatusByWorktreeId.get(worktree.id),
       agentStatusPaneIdsByTabId: live.agentStatusPaneIdsByTabId,
       stalePaneIdsByTabId: live.stalePaneIdsByTabId,
-      terminalLayoutsByTabId: live.paneSources.terminalLayoutsByTabId
+      terminalLayoutsByTabId: live.paneSources.terminalLayoutsByTabId,
+      runtimePaneTitleLeafIdsByTabId: live.runtimePaneTitleLeafIdsByTabId
     }
   )
   return (

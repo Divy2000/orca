@@ -5,6 +5,7 @@ import type { Repo } from '../../../../shared/repo-types'
 import type { Worktree } from '../../../../shared/worktree/types'
 import { computeVisibleWorktrees } from './visible-worktrees'
 import { getWorktreeIdsWithLiveAgent } from '@/lib/worktree-activity-state'
+import { selectHomedTerminalLayouts } from '@/lib/terminal-pane-home-index'
 import { getSettingsFocusedExecutionHostId } from '../../../../shared/execution-host'
 import type { AppState } from '@/store/types'
 import {
@@ -52,6 +53,9 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
   const browserTabsByWorktree = useAppStore((s) =>
     !showSleepingWorkspaces ? s.browserTabsByWorktree : null
   )
+  const homedTerminalLayouts = useAppStore((s) =>
+    !showSleepingWorkspaces ? selectHomedTerminalLayouts(s.terminalLayoutsByTabId) : null
+  )
   const worktreeIdsWithStructuredChat = useAppStore((s) =>
     getStructuredChatWorktreeIds(showSleepingWorkspaces, s.unifiedTabsByWorktree)
   )
@@ -69,10 +73,17 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
       ? getWorktreeIdsWithLiveAgent(
           useAppStore.getState().agentStatusByPaneKey,
           tabsByWorktree,
-          agentStatusNow
+          agentStatusNow,
+          homedTerminalLayouts
         )
       : EMPTY_WORKTREE_ID_SET
-  }, [agentStatusEpoch, agentStatusNow, showSleepingWorkspaces, tabsByWorktree])
+  }, [
+    agentStatusEpoch,
+    agentStatusNow,
+    homedTerminalLayouts,
+    showSleepingWorkspaces,
+    tabsByWorktree
+  ])
 
   return useMemo(() => {
     // Why: the board has its own status ordering, but visibility must match
@@ -87,6 +98,7 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
         browserTabsByWorktree,
         worktreeIdsWithLiveAgent,
         worktreeIdsWithStructuredChat,
+        terminalLayoutsByTabId: homedTerminalLayouts,
         hideDefaultBranchWorkspace,
         hideAutomationGeneratedWorkspaces,
         hideCliCreatedWorkspaces,
@@ -115,6 +127,7 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
     hideCliCreatedWorkspaces,
     hideDetachedHeadWorkspaces,
     hideWorkspacesFromOtherDevices,
+    homedTerminalLayouts,
     alwaysShowDefaultBranchWorkspace,
     workspaceHostScope,
     visibleWorkspaceHostIds,
