@@ -17,6 +17,7 @@ type WorkspaceSessionWorktreeReferenceKind =
   | 'row-record'
   | 'row-arrays'
   | 'browser-row-arrays'
+  | 'layout-leaf-homes'
 
 /** Every persisted session field must state how, if at all, it can name a worktree owner. */
 export const WORKSPACE_SESSION_WORKTREE_REFERENCE_KIND = {
@@ -26,7 +27,8 @@ export const WORKSPACE_SESSION_WORKTREE_REFERENCE_KIND = {
   activeWorktreeId: 'direct',
   activeTabId: 'none',
   tabsByWorktree: 'owner-keyed-row-arrays',
-  terminalLayoutsByTabId: 'none',
+  // Why: a pane hosted in another workspace's tab names its home workspace in homeByLeafId.
+  terminalLayoutsByTabId: 'layout-leaf-homes',
   localOnlyScrollbackByTabId: 'none',
   activeWorktreeIdsOnShutdown: 'worktree-id-array',
   openFilesByWorktree: 'owner-keyed-row-arrays',
@@ -152,6 +154,24 @@ function collectBrowserRows(
   }
 }
 
+function readObjectValues(value: unknown): unknown[] {
+  return value && typeof value === 'object' ? Object.values(value) : []
+}
+
+function collectLayoutLeafHomes(
+  layouts: unknown,
+  add: (ownerKey: string | null | undefined) => void
+): void {
+  for (const layout of readObjectValues(layouts)) {
+    const hasHomes = layout && typeof layout === 'object' && 'homeByLeafId' in layout
+    for (const home of hasHomes ? readObjectValues(layout.homeByLeafId) : []) {
+      if (home && typeof home === 'object' && 'worktreeId' in home) {
+        add(typeof home.worktreeId === 'string' ? home.worktreeId : null)
+      }
+    }
+  }
+}
+
 function collectSessionFieldOwners(
   value: unknown,
   kind: WorkspaceSessionWorktreeReferenceKind,
@@ -186,6 +206,9 @@ function collectSessionFieldOwners(
       for (const row of Object.values((value ?? {}) as Record<string, WorktreeRow>)) {
         add(row?.worktreeId)
       }
+      return
+    case 'layout-leaf-homes':
+      collectLayoutLeafHomes(value, add)
       return
     case 'row-arrays':
     case 'browser-row-arrays':

@@ -28,6 +28,7 @@ const REPO = 'repo'
 const OLD = `${REPO}::/old/path`
 const NEW = `${REPO}::/new/path`
 const CANDIDATES = new Set([OLD, NEW])
+const LEAF = '11111111-1111-4111-8111-111111111111'
 
 type SessionField = keyof WorkspaceSessionState
 
@@ -124,6 +125,16 @@ const REFERENCE_FIXTURES: Partial<Record<SessionField, Partial<WorkspaceSessionS
   clientHostedBrowserCloseIntentsByEnvironment: {
     clientHostedBrowserCloseIntentsByEnvironment: {
       'env-1': [{ browserPageId: 'chp', worktreeId: OLD, closedAt: 3 }]
+    }
+  },
+  terminalLayoutsByTabId: {
+    terminalLayoutsByTabId: {
+      'host-tab': {
+        root: { type: 'leaf', leafId: LEAF },
+        activeLeafId: LEAF,
+        expandedLeafId: null,
+        homeByLeafId: { [LEAF]: { worktreeId: OLD, sessionTabId: 'tab-1', sessionLeafId: LEAF } }
+      }
     }
   },
   activeTabTypeByWorktree: { activeTabTypeByWorktree: { [OLD]: 'terminal' } },

@@ -5,6 +5,7 @@ import type {
 } from '../../../../../../shared/browser-workspace-types'
 import { remapBrowserPageDocLocation } from '../../../../../../shared/browser-page-doc-location'
 import { splitWorktreeIdForFilesystem } from '../../../../../../shared/worktree/id'
+import { remapTerminalLeafHomeWorktreeId } from '../../../../../../shared/terminal-pane-home'
 import { worktreeWorkspaceKey } from '../../../../../../shared/workspace-scope'
 import { getWorktreeIdFromVisitKey } from '@/lib/worktree-visit-recency'
 import {
@@ -241,8 +242,14 @@ export function buildWorktreeRenameState(
         ])
       )
     : s.sleepingAgentSessionsByPaneKey
+  const terminalLayoutsByTabId = remapTerminalLeafHomeWorktreeId(
+    s.terminalLayoutsByTabId,
+    oldWorktreeId,
+    newWorktreeId
+  )
 
   return {
+    ...(terminalLayoutsByTabId ? { terminalLayoutsByTabId } : {}),
     ...(renamed as Partial<AppState>),
     ...(openFiles !== s.openFiles ? { openFiles } : {}),
     ...(browserPagesByWorkspace !== s.browserPagesByWorkspace ? { browserPagesByWorkspace } : {}),

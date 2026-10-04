@@ -59,6 +59,11 @@ export type SplitTerminalPaneDetail = {
   telemetrySource?: TerminalPaneSplitSource
   newLeafId?: string
   ptyId?: string
+  /** `before` puts the new pane left of/above the source (left and top drop zones). */
+  placement?: 'before' | 'after'
+  /** The new leaf is a pane moved in from another tab; its records (and any home) are already in
+   *  the stored layout, so it inherits nothing from the source pane. */
+  movedLeaf?: boolean
 }
 
 export type RequestActiveTerminalPaneSplitDetail = {

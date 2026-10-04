@@ -200,6 +200,8 @@ export type TerminalActions = {
     sourceLayout: TerminalLayoutSnapshot
     sourceTabId: string
     targetTabId: string
+    /** The existing tab's layout after the pane joined it; omit when the target is a new tab. */
+    targetLayout?: TerminalLayoutSnapshot
   }) => void
   queueTabStartupCommand: (
     tabId: string,

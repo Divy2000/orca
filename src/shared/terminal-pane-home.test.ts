@@ -3,6 +3,8 @@ import type { TerminalLayoutSnapshot, TerminalLeafHome } from './terminal-tab-ty
 import {
   carryTerminalLeafHomes,
   normalizeTerminalLeafHomes,
+  remapTerminalLeafHomeWorktreeId,
+  repointSessionLeafHomes,
   resolveTerminalLeafHome,
   resolveTerminalLeafHomeWorktreeId
 } from './terminal-pane-home'
@@ -167,5 +169,38 @@ describe('carryTerminalLeafHomes', () => {
 
   it('returns undefined when there is no prior map', () => {
     expect(carryTerminalLeafHomes(undefined, new Set([LEAF_1]))).toBeUndefined()
+  })
+})
+
+describe('remapTerminalLeafHomeWorktreeId', () => {
+  const RENAMED = 'repo-1::/work/renamed'
+
+  it('repoints every pane home that names the renamed workspace', () => {
+    const layouts = {
+      'tab-a': splitLayout({ [LEAF_2]: home(FOREIGN) }),
+      'tab-b': splitLayout({ [LEAF_2]: home(OWNER) })
+    }
+
+    const remapped = remapTerminalLeafHomeWorktreeId(layouts, FOREIGN, RENAMED)
+
+    expect(remapped?.['tab-a']?.homeByLeafId?.[LEAF_2]).toEqual(home(RENAMED))
+    expect(remapped?.['tab-b']).toBe(layouts['tab-b'])
+  })
+
+  it('returns null when no home names the renamed workspace', () => {
+    expect(remapTerminalLeafHomeWorktreeId({ 'tab-a': splitLayout() }, FOREIGN, RENAMED)).toBeNull()
+    expect(remapTerminalLeafHomeWorktreeId(undefined, FOREIGN, RENAMED)).toBeNull()
+  })
+})
+
+describe('repointSessionLeafHomes', () => {
+  it('rewrites the session layouts in place and reports whether anything changed', () => {
+    const session = {
+      terminalLayoutsByTabId: { 'tab-a': splitLayout({ [LEAF_2]: home(FOREIGN) }) }
+    }
+
+    expect(repointSessionLeafHomes(session, FOREIGN, OWNER)).toBe(true)
+    expect(session.terminalLayoutsByTabId['tab-a']?.homeByLeafId?.[LEAF_2]?.worktreeId).toBe(OWNER)
+    expect(repointSessionLeafHomes(session, FOREIGN, OWNER)).toBe(false)
   })
 })

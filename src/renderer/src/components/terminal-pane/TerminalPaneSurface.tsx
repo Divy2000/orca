@@ -23,6 +23,8 @@ import {
   TerminalPaneSshReconnectPortals
 } from './TerminalPaneRuntimePortals'
 import type { TerminalPaneController } from './use-terminal-pane-controller'
+import { useTerminalPaneHomeLabels } from './use-terminal-pane-home-labels'
+import { requestTerminalPaneSendHome } from './terminal-pane-send-home-action'
 
 export function TerminalPaneSurface({
   controller
@@ -112,6 +114,9 @@ export function TerminalPaneSurface({
     visibleTerminalError,
     worktreeId
   } = controller
+  const paneHomeLabels = useTerminalPaneHomeLabels(tabId, worktreeId)
+  const menuLeafId =
+    contextMenu.menuPaneId !== null ? managerRef.current?.getLeafId(contextMenu.menuPaneId) : null
 
   return (
     <>
@@ -269,6 +274,8 @@ export function TerminalPaneSurface({
         onCopyPaneId={contextMenu.onCopyPaneId}
         canCopyAgentSessionId={menuAgentSessionId !== null}
         onCopyAgentSessionId={() => void contextMenu.onCopyAgentSessionId()}
+        backHomeLabel={menuLeafId ? (paneHomeLabels[menuLeafId] ?? null) : null}
+        onSendPaneHome={() => requestTerminalPaneSendHome(tabId, menuLeafId)}
       />
       <LinkActionPopover request={terminalLinkActionRequest} onClose={closeTerminalLinkActions} />
       {quickCommandEditorOpen ? (
@@ -338,6 +345,8 @@ export function TerminalPaneSurface({
         onRenameSubmit={handleRenameSubmit}
         onRenameCancel={handleRenameCancel}
         onRenameBlur={handleRenameBlur}
+        paneHomeLabels={paneHomeLabels}
+        onSendPaneHome={(pane) => requestTerminalPaneSendHome(tabId, pane.leafId)}
       />
       <TerminalPaneRecoveryPortals controller={controller} />
       <TerminalPaneMobileDriverPortals controller={controller} />

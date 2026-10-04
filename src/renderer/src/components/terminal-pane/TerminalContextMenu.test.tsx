@@ -102,6 +102,8 @@ function renderMenu(overrides: Record<string, unknown> = {}): string {
     onCopyPaneId: vi.fn(),
     canCopyAgentSessionId: false,
     onCopyAgentSessionId: vi.fn(),
+    backHomeLabel: null,
+    onSendPaneHome: vi.fn(),
     ...overrides
   }
   return renderToStaticMarkup(React.createElement(TerminalContextMenu, props))
@@ -159,6 +161,28 @@ describe('TerminalContextMenu', () => {
 
     handoffItem?.onSelect?.()
     expect(onContinueAgentSessionInNewSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers Back to its workspace only for a pane hosted from another workspace', () => {
+    const onSendPaneHome = vi.fn()
+    renderMenu({ backHomeLabel: 'feature-login', onSendPaneHome })
+
+    const backItem = items.list.find((item) => childrenText(item.children).startsWith('Back to'))
+    expect(backItem).toBeDefined()
+    expect(translate).toHaveBeenCalledWith(
+      'auto.components.terminal.pane.terminalPaneHome.backTo',
+      'Back to {{value0}}',
+      { value0: 'feature-login' }
+    )
+
+    backItem?.onSelect?.()
+    expect(onSendPaneHome).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no Back to item for a native pane', () => {
+    renderMenu({ backHomeLabel: null })
+
+    expect(items.list.some((item) => childrenText(item.children).startsWith('Back to'))).toBe(false)
   })
 
   it('does not expose a native/terminal view switch in the terminal menu', () => {

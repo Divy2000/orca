@@ -53,6 +53,7 @@ function terminalLeafId(value: string): TerminalLeafId {
 }
 
 type SplitPane = PaneManager['splitPane']
+type SplitPaneAroundLeafIds = PaneManager['splitPaneAroundLeafIds']
 
 const createdTerminals: Terminal[] = []
 
@@ -108,7 +109,10 @@ function buildPtyDeps(): PtyConnectionDeps {
   }
 }
 
-function install(splitPane: Mock<SplitPane>): () => void {
+function install(
+  splitPane: Mock<SplitPane>,
+  splitPaneAroundLeafIds: Mock<SplitPaneAroundLeafIds> = vi.fn<SplitPaneAroundLeafIds>()
+): () => void {
   const leafIdByPaneId = new Map([
     [1, terminalLeafId(NATIVE_LEAF)],
     [2, terminalLeafId(FOREIGN_LEAF)]
@@ -119,6 +123,7 @@ function install(splitPane: Mock<SplitPane>): () => void {
   )
   vi.spyOn(manager, 'getLeafId').mockImplementation((paneId) => leafIdByPaneId.get(paneId) ?? null)
   vi.spyOn(manager, 'splitPane').mockImplementation(splitPane)
+  vi.spyOn(manager, 'splitPaneAroundLeafIds').mockImplementation(splitPaneAroundLeafIds)
   const uninstall = installTerminalPaneMountEvents({
     manager,
     deps: {
@@ -232,6 +237,88 @@ describe('installTerminalPaneMountEvents runtime split requests', () => {
     expect(splitPane).toHaveBeenCalledWith(1, 'vertical', { leafId: NEW_LEAF })
     expect(seen()).toBeUndefined()
     expect(mocks.state.setTabLayout).not.toHaveBeenCalled()
+    uninstall()
+  })
+
+  it('given a before placement then the pane is split around the target with that placement', () => {
+    const splitPane = vi.fn<SplitPane>()
+    const splitAround = vi.fn<SplitPaneAroundLeafIds>((_ids, _fallback, _dir, opts) =>
+      makeCreatedPane(opts?.leafId ?? '')
+    )
+    const uninstall = install(splitPane, splitAround)
+
+    dispatchTerminalPaneSplitRequest({
+      tabId: 'host-tab',
+      worktreeId: HOST,
+      paneRuntimeId: 1,
+      sourceLeafId: NATIVE_LEAF,
+      newLeafId: NEW_LEAF,
+      ptyId: 'pty-moved',
+      direction: 'horizontal',
+      placement: 'before'
+    })
+
+    expect(splitAround).toHaveBeenCalledWith([NATIVE_LEAF], 1, 'horizontal', {
+      leafId: NEW_LEAF,
+      ptyId: 'pty-moved',
+      placement: 'before'
+    })
+    expect(splitPane).not.toHaveBeenCalled()
+    uninstall()
+  })
+
+  it('given a moved-in pane next to a foreign pane then it keeps its own pre-written home', () => {
+    const movedHome: TerminalLeafHome = {
+      worktreeId: 'repo::/elsewhere',
+      sessionTabId: 'original-tab',
+      sessionLeafId: NEW_LEAF
+    }
+    const layout = mocks.state.terminalLayoutsByTabId['host-tab']!
+    mocks.state.terminalLayoutsByTabId['host-tab'] = {
+      ...layout,
+      homeByLeafId: { ...layout.homeByLeafId, [NEW_LEAF]: movedHome }
+    }
+    const splitPane = vi.fn<SplitPane>()
+    const seen = homeSeenBySplit(splitPane)
+    const uninstall = install(splitPane)
+
+    dispatchTerminalPaneSplitRequest({
+      tabId: 'host-tab',
+      worktreeId: HOST,
+      paneRuntimeId: 2,
+      sourceLeafId: FOREIGN_LEAF,
+      newLeafId: NEW_LEAF,
+      ptyId: 'pty-moved',
+      direction: 'vertical',
+      movedLeaf: true
+    })
+
+    expect(seen()).toEqual(movedHome)
+    expect(mocks.state.setTabLayout).not.toHaveBeenCalled()
+    uninstall()
+  })
+
+  it('given a moved-in native pane next to a foreign pane then it inherits no home', () => {
+    const splitPane = vi.fn<SplitPane>()
+    const seen = homeSeenBySplit(splitPane)
+    const uninstall = install(splitPane)
+
+    dispatchTerminalPaneSplitRequest({
+      tabId: 'host-tab',
+      worktreeId: HOST,
+      paneRuntimeId: 2,
+      sourceLeafId: FOREIGN_LEAF,
+      newLeafId: NEW_LEAF,
+      ptyId: 'pty-moved',
+      direction: 'vertical',
+      movedLeaf: true
+    })
+
+    expect(splitPane).toHaveBeenCalledWith(2, 'vertical', {
+      leafId: NEW_LEAF,
+      ptyId: 'pty-moved'
+    })
+    expect(seen()).toBeUndefined()
     uninstall()
   })
 })

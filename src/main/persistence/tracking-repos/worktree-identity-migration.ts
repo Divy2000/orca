@@ -9,6 +9,7 @@ import {
   isWorktreeHostIdentity
 } from '../../../shared/worktree/host-qualified-identity'
 import { splitWorktreeIdForFilesystem } from '../../../shared/worktree/id'
+import { repointSessionLeafHomes } from '../../../shared/terminal-pane-home'
 
 type WorktreeNamingRow = { worktreeId: string }
 
@@ -272,6 +273,9 @@ export function migrateWorktreeIdentity(
       session.clientHostedBrowserCloseIntentsByEnvironment = nextCloseIntents
       sessionChanged = true
     }
+    // Why: a pane hosted in another workspace's tab names its home by id; a stale one hides Back.
+    sessionChanged =
+      repointSessionLeafHomes(session, oldWorktreeId, newWorktreeId) || sessionChanged
     return sessionChanged
   }
 

@@ -469,4 +469,22 @@ describe('migrateWorktreeIdentity', () => {
       pushTarget: undefined
     })
   })
+
+  it('repoints pane homes that name the renamed workspace', () => {
+    const store = createTestStore()
+    const leafId = '11111111-1111-4111-8111-111111111111'
+    const layout = {
+      root: { type: 'leaf' as const, leafId },
+      activeLeafId: leafId,
+      expandedLeafId: null,
+      homeByLeafId: { [leafId]: { worktreeId: OLD, sessionTabId: 't', sessionLeafId: leafId } }
+    }
+    store.setState({ terminalLayoutsByTabId: { 'host-tab': layout } })
+
+    store.getState().migrateWorktreeIdentity(OLD, NEW)
+
+    expect(
+      store.getState().terminalLayoutsByTabId['host-tab']?.homeByLeafId?.[leafId]?.worktreeId
+    ).toBe(NEW)
+  })
 })

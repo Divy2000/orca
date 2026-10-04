@@ -56,6 +56,7 @@ vi.mock('lucide-react', () => ({
   ArrowUp: () => null,
   Columns2: () => null,
   Copy: () => null,
+  House: () => null,
   ListX: () => null,
   MessageSquare: () => null,
   PanelBottomClose: () => null,
@@ -69,8 +70,17 @@ vi.mock('lucide-react', () => ({
 }))
 
 vi.mock('@/i18n/i18n', () => ({
-  translate: (_key: string, fallback: string) => fallback
+  translate: (_key: string, fallback: string, values?: Record<string, string>) =>
+    Object.entries(values ?? {}).reduce(
+      (text, [key, value]) => text.replace(`{{${key}}}`, value),
+      fallback
+    )
 }))
+
+const sendHomeMock = vi.hoisted(() => ({
+  requestTerminalPaneSendHome: vi.fn()
+}))
+vi.mock('../terminal-pane/terminal-pane-send-home-action', () => sendHomeMock)
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -84,6 +94,41 @@ vi.mock('../../store', () => ({
 }))
 
 const mounted: { container: HTMLDivElement; root: Root }[] = []
+
+function seedLocalWorkspaces(worktreeIds: string[]): void {
+  storeMock.state.repos = [
+    {
+      id: 'repo1',
+      path: '/repo1',
+      displayName: 'Repo',
+      badgeColor: '#000',
+      addedAt: 0,
+      executionHostId: 'local'
+    }
+  ]
+  storeMock.state.worktreesByRepo = {
+    repo1: worktreeIds.map((id) => ({
+      id,
+      repoId: 'repo1',
+      path: id.split('::')[1],
+      displayName: id.split('/').at(-1),
+      branch: 'main'
+    }))
+  }
+}
+
+function hostTab(worktreeId: string): ComponentProps<typeof SortableTabContextMenu>['tab'] {
+  return {
+    id: 'term-1',
+    ptyId: null,
+    worktreeId,
+    title: 'bash',
+    customTitle: null,
+    color: null,
+    sortOrder: 0,
+    createdAt: 0
+  }
+}
 
 function renderMenu(overrides: Partial<ComponentProps<typeof SortableTabContextMenu>> = {}): {
   container: HTMLDivElement
@@ -155,6 +200,9 @@ beforeEach(() => {
   storeMock.dropUnifiedTab.mockReset()
   storeMock.state = {
     keybindings: {},
+    terminalLayoutsByTabId: {},
+    worktreesByRepo: {},
+    repos: [],
     dropUnifiedTab: storeMock.dropUnifiedTab,
     groupsByWorktree: {
       'wt-1': [
@@ -298,5 +346,53 @@ describe('SortableTabContextMenu', () => {
 
     expect(container.textContent).not.toContain('Move Tab to Split')
     expect(container.textContent).toContain('Split terminal right')
+  })
+
+  it('offers Back to its workspace when the tab only holds a pane from another workspace', () => {
+    const leafId = '11111111-1111-4111-8111-111111111111'
+    storeMock.state.terminalLayoutsByTabId = {
+      'term-1': {
+        root: { type: 'leaf', leafId },
+        activeLeafId: leafId,
+        expandedLeafId: null,
+        homeByLeafId: {
+          [leafId]: {
+            worktreeId: 'repo1::/home',
+            sessionTabId: 't',
+            sessionLeafId: leafId
+          }
+        }
+      }
+    }
+    seedLocalWorkspaces(['repo1::/host', 'repo1::/home'])
+    const { container } = renderMenu({ tab: hostTab('repo1::/host') })
+
+    act(() => getButton(container, 'Back to home').click())
+
+    expect(sendHomeMock.requestTerminalPaneSendHome).toHaveBeenCalledWith('term-1', leafId)
+  })
+
+  it('offers no Back to item when the pane home workspace no longer exists', () => {
+    const leafId = '11111111-1111-4111-8111-111111111111'
+    seedLocalWorkspaces(['repo1::/host'])
+    storeMock.state.terminalLayoutsByTabId = {
+      'term-1': {
+        root: { type: 'leaf', leafId },
+        activeLeafId: leafId,
+        expandedLeafId: null,
+        homeByLeafId: {
+          [leafId]: { worktreeId: 'repo1::/gone', sessionTabId: 't', sessionLeafId: leafId }
+        }
+      }
+    }
+    const { container } = renderMenu({ tab: hostTab('repo1::/host') })
+
+    expect(container.textContent).not.toContain('Back to')
+  })
+
+  it('offers no Back to item for a tab of native panes', () => {
+    const { container } = renderMenu()
+
+    expect(container.textContent).not.toContain('Back to')
   })
 })

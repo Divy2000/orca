@@ -83,6 +83,18 @@ describe('workspace session worktree ownership', () => {
       'closed-terminal tombstone',
       'closedTerminalTabTombstonesByTabId',
       { tab: { worktreeId: TARGET } }
+    ],
+    [
+      'cross-workspace pane home',
+      'terminalLayoutsByTabId',
+      {
+        'host-tab': {
+          root: { type: 'leaf', leafId: 'leaf' },
+          activeLeafId: 'leaf',
+          expandedLeafId: null,
+          homeByLeafId: { leaf: { worktreeId: TARGET, sessionTabId: 't', sessionLeafId: 'leaf' } }
+        }
+      }
     ]
   ] as const)(
     'collects a %s value even when its enclosing key names something else',

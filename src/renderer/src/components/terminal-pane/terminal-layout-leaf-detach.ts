@@ -126,3 +126,19 @@ export function detachTerminalLayoutLeaf(
     ptyId: detachedPtyIdsByLeafId?.[leafId] ?? null
   }
 }
+
+/** A single-pane layout detached whole: the source tab is left empty, to be closed by the caller. */
+export function detachLastTerminalLayoutLeaf(
+  snapshot: TerminalLayoutSnapshot | null | undefined,
+  leafId: string
+): DetachedTerminalLayoutLeaf | null {
+  const layout = normalizeTerminalLayoutSnapshot(snapshot).snapshot
+  if (layout.root?.type !== 'leaf' || layout.root.leafId !== leafId) {
+    return null
+  }
+  return {
+    sourceLayout: { root: null, activeLeafId: null, expandedLeafId: null },
+    detachedLayout: { ...layout, activeLeafId: leafId, expandedLeafId: null },
+    ptyId: layout.ptyIdsByLeafId?.[leafId] ?? null
+  }
+}

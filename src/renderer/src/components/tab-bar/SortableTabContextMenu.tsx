@@ -22,6 +22,7 @@ import { useAppStore } from '../../store'
 import { formatShortcutLabel, useOptionalShortcutLabel } from '@/hooks/useShortcutLabel'
 import { translate } from '@/i18n/i18n'
 import { TerminalTabSplitMenuSection } from './TerminalTabSplitMenuSection'
+import { TerminalTabBackHomeMenuItem } from './TerminalTabBackHomeMenuItem'
 import { TAB_CONTEXT_MENU_CONTENT_CLASS } from './tab-context-menu-sizing'
 
 const TAB_COLORS = [
@@ -172,6 +173,7 @@ export function SortableTabContextMenu({
           splitDownShortcut={splitDownShortcut}
           showTerminalSplit={canSplitTerminal}
         />
+        <TerminalTabBackHomeMenuItem tabId={tab.id} worktreeId={tab.worktreeId} />
         {canToggleViewMode && onToggleViewMode ? (
           <>
             <DropdownMenuSeparator />

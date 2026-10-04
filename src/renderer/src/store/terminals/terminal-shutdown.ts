@@ -12,6 +12,7 @@ import { equalStringSets, sortedUniquePtyIds } from './terminal-pty-identities'
 import { resolveTerminalStopRuntimeEnvironmentId } from './terminal-workspace-routing'
 import { createTerminalShutdownGuardController } from './terminal-shutdown-guards'
 import { commitTerminalShutdownState } from './terminal-shutdown-state'
+import { repatriateTerminalPaneHomesForShutdown } from '@/components/terminal-pane/terminal-pane-home-repatriation'
 
 type ExactTerminalStopResult = {
   stoppedPtyIds?: string[]
@@ -29,6 +30,8 @@ export function createTerminalShutdownActions(
       const keepIdentifiers = opts?.keepIdentifiers ?? false
       const shutdownReason: AgentStatusWorktreeShutdownReason =
         opts?.shutdownReason ?? (keepIdentifiers ? 'manual-sleep' : 'remove-worktree')
+      // Why first: the tab snapshot below must already exclude panes going home and include ones coming back.
+      repatriateTerminalPaneHomesForShutdown(get, worktreeId)
       const tabs = get().tabsByWorktree[worktreeId] ?? []
       const rendererShutdownPtyIds = sortedUniquePtyIds(
         tabs.flatMap((tab) => get().ptyIdsByTabId[tab.id] ?? [])

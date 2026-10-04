@@ -48,33 +48,39 @@ export function installTerminalPaneMountEvents(args: {
       if (sourcePaneId < 0) {
         return
       }
-      const inheritedHome = installSplitPaneHome({
-        tabId: deps.tabId,
-        tabWorktreeId: deps.worktreeId,
-        sourceLeafId: detail.sourceLeafId ?? mgr.getLeafId(sourcePaneId),
-        newLeafId: detail.newLeafId,
-        homeWorktreeId: detail.homeWorktreeId
-      })
+      const sourceLeafId = detail.sourceLeafId ?? mgr.getLeafId(sourcePaneId)
+      const inheritedHome = detail.movedLeaf
+        ? null
+        : installSplitPaneHome({
+            tabId: deps.tabId,
+            tabWorktreeId: deps.worktreeId,
+            sourceLeafId,
+            newLeafId: detail.newLeafId,
+            homeWorktreeId: detail.homeWorktreeId
+          })
       const newLeafId = inheritedHome?.leafId ?? detail.newLeafId
       const splitOptions = {
         ...(newLeafId ? { leafId: newLeafId } : {}),
         ...(detail.ptyId ? { ptyId: detail.ptyId } : {})
       }
+      const splitSourcePane = () =>
+        detail.placement && sourceLeafId
+          ? mgr.splitPaneAroundLeafIds([sourceLeafId], sourcePaneId, detail.direction, {
+              ...splitOptions,
+              placement: detail.placement
+            })
+          : mgr.splitPane(sourcePaneId, detail.direction, splitOptions)
       const command = detail.command
       if (command) {
         const createdPane = splitWithInstalledPaneHome(inheritedHome, () =>
-          splitPaneWithOneShotStartup(ptyDeps, { command }, () =>
-            mgr.splitPane(sourcePaneId, detail.direction, splitOptions)
-          )
+          splitPaneWithOneShotStartup(ptyDeps, { command }, splitSourcePane)
         )
         recordRuntimeCreatedTerminalPaneSplit(createdPane, {
           source: detail.telemetrySource ?? 'command',
           direction: detail.direction
         })
       } else {
-        const createdPane = splitWithInstalledPaneHome(inheritedHome, () =>
-          mgr.splitPane(sourcePaneId, detail.direction, splitOptions)
-        )
+        const createdPane = splitWithInstalledPaneHome(inheritedHome, splitSourcePane)
         const telemetrySuppressed = createdPane
           ? consumePendingWebRuntimeSplitMirrorTelemetry(detail.sourcePtyId, detail.direction)
           : false

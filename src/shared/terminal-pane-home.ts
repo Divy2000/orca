@@ -96,3 +96,46 @@ export function sameTerminalLeafHomes(
     )
   )
 }
+
+/** Repoints pane homes after a workspace's id changes (folder rename); null when none named it. */
+export function remapTerminalLeafHomeWorktreeId(
+  layoutsByTabId: Readonly<Record<string, TerminalLayoutSnapshot>> | undefined,
+  oldWorktreeId: string,
+  newWorktreeId: string
+): Record<string, TerminalLayoutSnapshot> | null {
+  let next: Record<string, TerminalLayoutSnapshot> | null = null
+  for (const [tabId, layout] of Object.entries(layoutsByTabId ?? {})) {
+    const homes = layout.homeByLeafId
+    if (!homes || !Object.values(homes).some((home) => home.worktreeId === oldWorktreeId)) {
+      continue
+    }
+    next ??= { ...layoutsByTabId }
+    next[tabId] = {
+      ...layout,
+      homeByLeafId: Object.fromEntries(
+        Object.entries(homes).map(([leafId, home]) => [
+          leafId,
+          home.worktreeId === oldWorktreeId ? { ...home, worktreeId: newWorktreeId } : home
+        ])
+      )
+    }
+  }
+  return next
+}
+
+/** In-place form for persisted sessions, which main migrates by mutation; true when one changed. */
+export function repointSessionLeafHomes(
+  session: { terminalLayoutsByTabId: Record<string, TerminalLayoutSnapshot> },
+  oldWorktreeId: string,
+  newWorktreeId: string
+): boolean {
+  const next = remapTerminalLeafHomeWorktreeId(
+    session.terminalLayoutsByTabId,
+    oldWorktreeId,
+    newWorktreeId
+  )
+  if (next) {
+    session.terminalLayoutsByTabId = next
+  }
+  return next !== null
+}

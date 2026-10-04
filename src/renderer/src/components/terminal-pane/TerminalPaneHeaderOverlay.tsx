@@ -14,6 +14,7 @@ import { WORKSPACE_FILE_PATH_MIME, WORKSPACE_FILE_PATHS_MIME } from '@/lib/works
 import { isImeCompositionKeyDown } from '@/lib/ime-composition-keyboard-event'
 import type { PtyTransport } from './pty-transport'
 import { handleInternalTerminalFileDrop } from './terminal-drop-handler'
+import { TerminalPaneBackHomeButton } from './TerminalPaneBackHomeButton'
 
 export type PaneTitleOverlayRect = {
   left: number
@@ -66,6 +67,9 @@ type TerminalPaneHeaderOverlayProps = {
   onRenameSubmit: () => void
   onRenameCancel: () => void
   onRenameBlur: () => void
+  /** Home workspace names of panes hosted from another workspace, keyed by leaf id. */
+  paneHomeLabels?: Readonly<Record<string, string>>
+  onSendPaneHome?: (pane: ManagedPane) => void
 }
 
 export default function TerminalPaneHeaderOverlay({
@@ -104,7 +108,9 @@ export default function TerminalPaneHeaderOverlay({
   onRenameValueChange,
   onRenameSubmit,
   onRenameCancel,
-  onRenameBlur
+  onRenameBlur,
+  paneHomeLabels,
+  onSendPaneHome
 }: TerminalPaneHeaderOverlayProps): React.JSX.Element {
   const splitRightLabel = translate(
     'auto.components.terminal.pane.TerminalContextMenu.20e565d865',
@@ -328,6 +334,10 @@ export default function TerminalPaneHeaderOverlay({
                       </TooltipContent>
                     </Tooltip>
                   ) : null}
+                  <TerminalPaneBackHomeButton
+                    workspaceName={onSendPaneHome ? paneHomeLabels?.[pane.leafId] : undefined}
+                    onSendHome={() => onSendPaneHome?.(pane)}
+                  />
                   {showAlwaysOnHeaders && showSplitButton ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
