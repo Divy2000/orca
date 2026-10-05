@@ -645,8 +645,17 @@ upstream_report() {
       cd "$REPO"
       return 1
     fi
-    if run_step "upstream pnpm install" $(step_limits install) \
+    # Why: like the fork's verify, mobile/ needs its own install; tests that import
+    # mobile/ files cannot even load without it.
+    if ! run_step "upstream pnpm install" $(step_limits install) \
       "$RUN_DIR/step-upstream-install.log" pnpm install --frozen-lockfile; then
+      log "Upstream pnpm install failed:"
+      tail -n 40 "$RUN_DIR/step-upstream-install.log" >&2 || true
+    elif ! run_step "upstream mobile pnpm install" $(step_limits install) \
+      "$RUN_DIR/step-upstream-mobile-install.log" mobile_install; then
+      log "Upstream mobile pnpm install failed:"
+      tail -n 40 "$RUN_DIR/step-upstream-mobile-install.log" >&2 || true
+    else
       run_scoped_tests "Upstream $latest tests" "$report" "$RELATED_UPSTREAM_SOURCES" || true
     fi
     if [[ -s "$report" ]]; then
@@ -672,24 +681,30 @@ mobile_install() {
   cd mobile && pnpm install --frozen-lockfile
 }
 
+# Returns 1 only for failures a Claude repair session can fix: a failing
+# typecheck, or test failures and unhandled errors the upstream release does not
+# have. Why fail directly otherwise: a broken install or a missing test report
+# says nothing about the fork's code, so a repair session would only guess.
 verify() {
-  node --test fork-sync/*.test.mjs >&2 || return 1
+  node --test fork-sync/*.test.mjs >&2 || fail "fork-sync self-tests failed"
   # Why: build:mac packages x64 and arm64, which needs both native variants installed.
-  run_logged_step "pnpm install:release" $(step_limits install) pnpm run install:release || return 1
+  run_logged_step "pnpm install:release" $(step_limits install) pnpm run install:release \
+    || fail "pnpm install:release failed"
   # Why: build:mac bundles the mobile web client, which resolves React Native from mobile/'s own install.
-  run_logged_step "mobile pnpm install" $(step_limits install) mobile_install || return 1
+  run_logged_step "mobile pnpm install" $(step_limits install) mobile_install \
+    || fail "mobile pnpm install failed"
   run_logged_step "typecheck" $(step_limits typecheck) pnpm run tc || return 1
-  select_test_scope || { log "Could not select the tests to run."; return 1; }
+  select_test_scope || fail "could not select the unit tests to run"
   if nothing_to_test; then
     return 0
   fi
   local baseline
   local fork_report="$FORK_REPORT" retry_report="$RETRY_REPORT"
-  upstream_report || { log "Could not produce the upstream test report."; return 1; }
+  upstream_report || fail "could not produce the upstream $latest test report"
   baseline="$UPSTREAM_BASELINE"
   rm -f "$fork_report" "$retry_report" "${fork_report%.json}.log" "${retry_report%.json}.log"
   run_scoped_tests "Fork tests" "$fork_report" "$RELATED_FORK_SOURCES" || true
-  [[ -s "$fork_report" ]] || { log "Fork test run produced no report."; return 1; }
+  [[ -s "$fork_report" ]] || fail "the fork test run produced no report"
   if node "$COMPARE" "$baseline" "$UPSTREAM_ROOT" "$fork_report" "$REPO" > "$INTRODUCED_FILE"; then
     return 0
   fi
