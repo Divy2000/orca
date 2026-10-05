@@ -312,3 +312,27 @@ test('given conflicts only in files the fork never modified, the merge is commit
   assert.match(run.stderr, /skipping the Claude session/)
   assert.equal(claudeCalled, false)
 })
+
+test('given the upstream worktree cannot be created, no tests run and the baseline fails', (t) => {
+  const dir = tempDir(t)
+  const run = runFunctions(
+    dir,
+    ['upstream_report'],
+    [
+      `mkdir -p '${dir}/state/repo' && cd '${dir}/state/repo'`,
+      `latest=v1.1.0; latest_ref=refs/upstream-tags/v1.1.0; UPSTREAM_ROOT='${dir}/scratch/sync/upstream'; COMPARE=/dev/null`,
+      'log() { :; }',
+      'upstream_baseline_key() { echo key; }',
+      'step_limits() { echo "60 60"; }',
+      `run_step() { echo ran-step >> '${dir}/calls'; }`,
+      `run_unit_tests() { echo ran-tests >> '${dir}/calls'; }`,
+      'git() { if [[ "$1" == worktree && "$2" == add ]]; then return 1; fi; return 0; }',
+      'if upstream_report; then echo "status=ok"; else echo "status=failed"; fi',
+      'echo "cwd=$PWD"'
+    ].join('\n')
+  )
+  assert.equal(run.status, 0, run.stderr)
+  assert.match(run.stdout, /status=failed/)
+  assert.match(run.stdout, new RegExp(`cwd=.*${dir.split('/').pop()}/state/repo$`, 'm'))
+  assert.throws(() => readFileSync(join(dir, 'calls'), 'utf8'))
+})

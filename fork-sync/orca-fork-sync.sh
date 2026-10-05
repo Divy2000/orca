@@ -462,8 +462,14 @@ upstream_report() {
       "$STATE_DIR"/upstream-confirm-*.json "$STATE_DIR"/upstream-confirm-*.log
     log "Running upstream $latest test suite for the failure baseline ($key)."
     git worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
-    git worktree add --force --detach "$UPSTREAM_WORKTREE" "$latest_ref" >/dev/null
-    cd "$UPSTREAM_WORKTREE"
+    # Why: callers test this with ||, which disables errexit; a silent failure here
+    # would leave cwd in $REPO and use the fork itself as the upstream baseline.
+    if ! git worktree add --force --detach "$UPSTREAM_WORKTREE" "$latest_ref" >/dev/null \
+      || ! cd "$UPSTREAM_WORKTREE"; then
+      log "Could not prepare the upstream worktree at $UPSTREAM_WORKTREE."
+      cd "$REPO"
+      return 1
+    fi
     if run_step "upstream pnpm install" $(step_limits install) \
       "$RUN_DIR/step-upstream-install.log" pnpm install --frozen-lockfile; then
       run_unit_tests "$report" || true
