@@ -487,10 +487,13 @@ unit_test_commands() {
 # The baseline is reused only while every input that can change its outcome
 # (release and its commit, lockfile, Node, macOS, CPU, checkout root, vitest
 # worker count) is identical.
+# Bump the format whenever the way a baseline is built changes, so
+# baselines cached by the old way are never reused. 2: mobile/ is installed first.
 upstream_baseline_key() {
-  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest_ref^{commit}")" "$(git rev-parse "$latest_ref:pnpm-lock.yaml")" \
+  local format=2
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest_ref^{commit}")" "$(git rev-parse "$latest_ref:pnpm-lock.yaml")" \
     "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" "$UPSTREAM_ROOT" "workers=${VITEST_WORKERS:-default}" \
-    "tests=$(test_scope_key)" | shasum -a 256 | cut -c1-16
+    "tests=$(test_scope_key)" "baseline-format=$format" | shasum -a 256 | cut -c1-16
 }
 
 test_scope_key() {

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
@@ -69,7 +71,7 @@ test('given an infrastructure failure, the job fails naming it instead of starti
 
 // A release with a mobile/ app in a git repo whose upstream worktree setup is real;
 // run_step records each step's name and directory instead of running it.
-function upstreamWith(t, failingStep) {
+function baselineRepo(t) {
   const dir = tempDir(t)
   const repo = join(dir, 'state/repo')
   mkdirSync(join(repo, 'mobile'), { recursive: true })
@@ -81,6 +83,10 @@ function upstreamWith(t, failingStep) {
     'release'
   )
   git(repo, 'update-ref', 'refs/upstream-tags/v1.1.0', 'HEAD')
+  return { dir, repo }
+}
+
+function runUpstream(dir, repo, failingStep, call) {
   const run = runFunctions(
     dir,
     ['log', 'test_scope_key', 'upstream_baseline_key', 'upstream_report'],
@@ -91,10 +97,18 @@ function upstreamWith(t, failingStep) {
       `run_step() { echo "$1|$(pwd)" >> '${dir}/steps'; [[ "$1" != '${failingStep}' ]]; }`,
       `run_scoped_tests() { echo tests >> '${dir}/steps'; echo '{"testResults":[]}' > "$2"; echo ok > "\${2%.json}.log"; }`,
       `cd '${repo}'`,
-      'if upstream_report; then echo "upstream_report returned 0"; else echo "upstream_report returned $?"; fi'
+      call
     ].join('\n')
   )
-  return { dir, run, steps: readOr(join(dir, 'steps')) }
+  return { run, steps: readOr(join(dir, 'steps')) }
+}
+
+const REPORT =
+  'if upstream_report; then echo "upstream_report returned 0"; else echo "upstream_report returned $?"; fi'
+
+function upstreamWith(t, failingStep) {
+  const { dir, repo } = baselineRepo(t)
+  return { dir, ...runUpstream(dir, repo, failingStep, REPORT) }
 }
 
 test('given the upstream baseline is built, both the root and the mobile dependencies are installed first', (t) => {
@@ -117,4 +131,49 @@ test('given an upstream install fails, no tests run and the baseline is reported
     assert.doesNotMatch(steps, /tests/, step)
     assert.match(run.stderr, message, step)
   }
+})
+
+function cacheBaseline(dir, key) {
+  for (const kind of ['tests', 'confirm']) {
+    writeFileSync(join(dir, `state/upstream-${kind}-${key}.json`), '{"testResults":[]}\n')
+    writeFileSync(join(dir, `state/upstream-${kind}-${key}.log`), 'cached\n')
+  }
+}
+
+// The key exactly as upstream_baseline_key computed it before baselines
+// included mobile/'s install.
+function keyBeforeFormatRevision(dir, repo) {
+  const out = (cmd, ...args) => execFileSync(cmd, args, { encoding: 'utf8' }).trim()
+  const fields = [
+    'v1.1.0',
+    git(repo, 'rev-parse', 'refs/upstream-tags/v1.1.0^{commit}'),
+    git(repo, 'rev-parse', 'refs/upstream-tags/v1.1.0:pnpm-lock.yaml'),
+    out('node', '--version'),
+    out('sw_vers', '-productVersion'),
+    out('uname', '-m'),
+    `${dir}/state/test-run/upstream`,
+    'workers=default',
+    'tests=full'
+  ]
+  return createHash('sha256').update(fields.join('|')).digest('hex').slice(0, 16)
+}
+
+test('given a baseline cached under the current key, it is reused without rebuilding', (t) => {
+  const { dir, repo } = baselineRepo(t)
+  const { run: keyRun } = runUpstream(dir, repo, 'none', 'upstream_baseline_key')
+  assert.equal(keyRun.status, 0, keyRun.stderr)
+  cacheBaseline(dir, keyRun.stdout.trim())
+  const { run, steps } = runUpstream(dir, repo, 'none', REPORT)
+  assert.equal(run.stdout.trim(), 'upstream_report returned 0', run.stderr)
+  assert.match(run.stderr, /Reusing upstream v1\.1\.0 test baseline/)
+  assert.equal(steps, '')
+})
+
+test('given a baseline cached before mobile installs were part of it, it is rebuilt', (t) => {
+  const { dir, repo } = baselineRepo(t)
+  cacheBaseline(dir, keyBeforeFormatRevision(dir, repo))
+  const { run, steps } = runUpstream(dir, repo, 'none', REPORT)
+  assert.equal(run.stdout.trim(), 'upstream_report returned 0', run.stderr)
+  assert.doesNotMatch(run.stderr, /Reusing upstream/)
+  assert.match(steps, /upstream mobile pnpm install/)
 })
