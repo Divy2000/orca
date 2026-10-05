@@ -27,7 +27,13 @@ scratch_dir() {
   fi
 }
 RUN_DIR="$(scratch_dir "$HOME/.orca-scratch" "$STATE_DIR")"
-UPSTREAM_WORKTREE="$RUN_DIR/upstream"
+# Test suites run from one of these, chosen per run by choose_test_run_dir.
+INTERNAL_TEST_DIR="$STATE_DIR/test-run"
+SCRATCH_TEST_DIR="$RUN_DIR/test-run"
+MIN_INTERNAL_TEST_FREE_KB=$((6 * 1024 * 1024))
+TEST_RUN_DIR=""
+UPSTREAM_WORKTREE=""
+UPSTREAM_ROOT=""
 FORK_REPORT="$RUN_DIR/fork-tests.json"
 RETRY_REPORT="$RUN_DIR/fork-retry.json"
 STAGED_DIR="$RUN_DIR/staged"
@@ -248,10 +254,10 @@ fi
 # Why: a staged build outlives its run so it can still be installed after the
 # install wait gives up; only a newer build or a successful install replaces it.
 cleanup_run_data() {
-  if [[ -d "$REPO/.git" ]]; then
-    git -C "$REPO" worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
-  fi
-  rm -rf "$UPSTREAM_WORKTREE" "$FORK_REPORT" "${FORK_REPORT%.json}.log" "$RETRY_REPORT" "${RETRY_REPORT%.json}.log"
+  # Both test-run locations, since an earlier run may have used the other disk;
+  # $RUN_DIR/upstream is where earlier versions kept the upstream worktree.
+  rm -rf "$INTERNAL_TEST_DIR" "$SCRATCH_TEST_DIR" "$RUN_DIR/upstream" \
+    "$FORK_REPORT" "${FORK_REPORT%.json}.log" "$RETRY_REPORT" "${RETRY_REPORT%.json}.log"
   rm -f "$RUN_DIR"/step-*.log
   # Only the link is removed; a real dist/ from a fallback run stays as before.
   if [[ -L "$REPO/dist" ]]; then
@@ -262,7 +268,7 @@ cleanup_run_data() {
     rmdir "$RUN_DIR" 2>/dev/null || true
   fi
   if [[ -d "$REPO/.git" ]]; then
-    git -C "$REPO" worktree prune
+    git -C "$REPO" worktree prune --expire=now
   fi
 }
 # Why: earlier versions staged builds in $STATE_DIR; nothing reads that copy
@@ -275,6 +281,43 @@ remove_legacy_staged() {
     rm -rf "$legacy"
   fi
 }
+free_kb() { df -Pk "$1" | awk 'NR == 2 { print $4 }'; }
+
+# Why: vitest ran about 18x slower from the USB scratch disk than from the
+# internal one, so the upstream worktree and vitest's temp dir use the internal
+# disk when it has room. cleanup_run_data deletes them with every run.
+choose_test_run_dir() {
+  local free
+  free="$(free_kb "$STATE_DIR")"
+  if (( free >= MIN_INTERNAL_TEST_FREE_KB )); then
+    TEST_RUN_DIR="$INTERNAL_TEST_DIR"
+  else
+    TEST_RUN_DIR="$SCRATCH_TEST_DIR"
+    log "Internal disk has only $(( free / 1024 / 1024 )) GB free; running tests from $TEST_RUN_DIR instead."
+  fi
+  mkdir -p "$TEST_RUN_DIR/tmp"
+  UPSTREAM_WORKTREE="$TEST_RUN_DIR/upstream"
+  # Why: Node reports the physical cwd, so vitest names upstream test files by the
+  # real worktree path, not a symlinked one; failure ids are relative to it.
+  UPSTREAM_ROOT="$(cd "$TEST_RUN_DIR" && pwd -P)/upstream"
+  log "Test suites run from $TEST_RUN_DIR."
+}
+
+prepare_run() {
+  # Removes leftovers of a run that was killed before its trap could clean up.
+  cleanup_run_data
+  mkdir -p "$RUN_DIR"
+  if [[ "$RUN_DIR" != "$STATE_DIR" ]]; then
+    mkdir -p "$RUN_DIR/tmp"
+    export TMPDIR="$RUN_DIR/tmp"
+  fi
+  log "Run data directory: $RUN_DIR"
+  exit_if_machine_busy
+  # Why: measured before installs, typecheck and builds add load of our own.
+  choose_vitest_workers
+  choose_test_run_dir
+}
+
 on_exit() {
   stop_current_step
   cleanup_run_data || log "Could not fully clean run data in $RUN_DIR."
@@ -282,18 +325,7 @@ on_exit() {
 }
 trap on_exit EXIT
 trap 'exit 143' TERM HUP INT
-# Removes leftovers of a run that was killed before its trap could clean up.
-cleanup_run_data
-mkdir -p "$RUN_DIR"
-if [[ "$RUN_DIR" != "$STATE_DIR" ]]; then
-  mkdir -p "$RUN_DIR/tmp"
-  export TMPDIR="$RUN_DIR/tmp"
-fi
-log "Run data directory: $RUN_DIR"
-exit_if_machine_busy
-# Why: Node reports the physical cwd, so vitest names upstream test files by the
-# real worktree path, not the symlinked one; failure ids are relative to it.
-UPSTREAM_ROOT="$(cd "$RUN_DIR" && pwd -P)/upstream"
+prepare_run
 
 run_claude() {
   local task="$1" prompt
@@ -431,6 +463,8 @@ unit_test_commands() {
   if [[ -n "$VITEST_WORKERS" ]]; then
     workers=(--maxWorkers="$VITEST_WORKERS")
   fi
+  local TMPDIR="$TEST_RUN_DIR/tmp"
+  export TMPDIR
   # Why: ORCA_BALANCE_UNIT_SHARDS changes which tests run, so both runs must agree on it.
   NO_COLOR=1 node config/scripts/ensure-native-runtime.mjs --runtime=node \
     && env -u ORCA_BALANCE_UNIT_SHARDS -u FORCE_COLOR NO_COLOR=1 pnpm exec vitest run --config config/vitest.config.ts \
@@ -504,7 +538,6 @@ verify() {
   # Why: build:mac bundles the mobile web client, which resolves React Native from mobile/'s own install.
   run_logged_step "mobile pnpm install" $(step_limits install) mobile_install || return 1
   run_logged_step "typecheck" $(step_limits typecheck) pnpm run tc || return 1
-  choose_vitest_workers
   local baseline
   local fork_report="$FORK_REPORT" retry_report="$RETRY_REPORT"
   upstream_report || { log "Could not produce the upstream test report."; return 1; }
