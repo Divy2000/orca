@@ -82,12 +82,14 @@ test('given a requested file missing from a retry report, it still counts as fai
   )
 })
 
-test('given the CLI path contains spaces, the CLI still runs and reports introduced failures', async () => {
-  const { mkdtempSync, writeFileSync, copyFileSync, mkdirSync } = await import('node:fs')
+test('given the CLI path contains spaces, the CLI still runs and reports introduced failures', async (t) => {
+  const { mkdtempSync, writeFileSync, copyFileSync, mkdirSync, rmSync } = await import('node:fs')
   const { join } = await import('node:path')
   const { tmpdir } = await import('node:os')
   const { spawnSync } = await import('node:child_process')
-  const dir = join(mkdtempSync(join(tmpdir(), 'cmp-')), 'Application Support')
+  const root = mkdtempSync(join(tmpdir(), 'cmp-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const dir = join(root, 'Application Support')
   mkdirSync(dir)
   const cli = join(dir, 'compare-test-failures.mjs')
   copyFileSync(new URL('./compare-test-failures.mjs', import.meta.url), cli)
@@ -157,11 +159,12 @@ test('given a log with no unhandled errors, there are no unhandled ids', () => {
   assert.deepEqual([...unhandledErrorIds(' Test Files  1 passed (1)\n')], [])
 })
 
-test('given a report with a sibling console log, its unhandled errors are failures', async () => {
-  const { mkdtempSync, writeFileSync } = await import('node:fs')
+test('given a report with a sibling console log, its unhandled errors are failures', async (t) => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
   const { join } = await import('node:path')
   const { tmpdir } = await import('node:os')
   const dir = mkdtempSync(join(tmpdir(), 'cmp-log-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
   writeFileSync(join(dir, 'fork.json'), JSON.stringify(report('/fork', [])))
   writeFileSync(join(dir, 'fork.log'), UNHANDLED_LOG)
   assert.ok(

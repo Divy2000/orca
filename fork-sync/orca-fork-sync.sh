@@ -14,13 +14,30 @@ UPSTREAM_REPO="stablyai/orca"
 # Why: no spaces in work paths; native module builds break on them.
 STATE_DIR="$HOME/.orca-fork-sync"
 REPO="$STATE_DIR/repo"
-UPSTREAM_WORKTREE="$STATE_DIR/upstream"
+
+# Why: the internal disk is nearly full, so disposable run data goes to the
+# external scratch volume whenever it is mounted, reached through its stable
+# ~/.orca-scratch symlink. Permanent state never lives there.
+scratch_dir() {
+  local scratch="$1" fallback="$2"
+  if [[ -d "$scratch" && -w "$scratch" ]]; then
+    printf '%s\n' "$scratch/sync"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+RUN_DIR="$(scratch_dir "$HOME/.orca-scratch" "$STATE_DIR")"
+UPSTREAM_WORKTREE="$RUN_DIR/upstream"
+FORK_REPORT="$RUN_DIR/fork-tests.json"
+RETRY_REPORT="$RUN_DIR/fork-retry.json"
+STAGED_DIR="$RUN_DIR/staged"
 LOG_DIR="$HOME/Library/Logs/orca-fork-sync"
 APP_PATH="/Applications/Orca.app"
 SIGN_IDENTITY="${ORCA_FORK_SIGN_IDENTITY:-Apple Development: Divy Kamlesh Patel (Q957WMRP9V)}"
 INSTALL_WAIT_SECONDS=$((7 * 24 * 3600))
 CLAUDE_MAX_TURNS=200
 COMPARE="$STATE_DIR/bin/compare-test-failures.mjs"
+RESOLVE_UNTOUCHED="$STATE_DIR/bin/resolve-untouched-conflicts.mjs"
 INTRODUCED_FILE="$STATE_DIR/introduced-failures.txt"
 
 mkdir -p "$STATE_DIR" "$LOG_DIR"
@@ -58,7 +75,48 @@ if ! shlock -f "$LOCK_FILE" -p $$; then
   rm -f "$LOCK_FILE"
   shlock -f "$LOCK_FILE" -p $$ || { log "Lost the lock race; exiting."; exit 0; }
 fi
-trap '[[ "$(cat "$LOCK_FILE" 2>/dev/null)" == "$$" ]] && rm -f "$LOCK_FILE"' EXIT
+
+# Why: a staged build outlives its run so it can still be installed after the
+# install wait gives up; only a newer build or a successful install replaces it.
+cleanup_run_data() {
+  if [[ -d "$REPO/.git" ]]; then
+    git -C "$REPO" worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
+  fi
+  rm -rf "$UPSTREAM_WORKTREE" "$FORK_REPORT" "${FORK_REPORT%.json}.log" "$RETRY_REPORT" "${RETRY_REPORT%.json}.log"
+  if [[ "$RUN_DIR" != "$STATE_DIR" ]]; then
+    rm -rf "$RUN_DIR/tmp"
+    rmdir "$RUN_DIR" 2>/dev/null || true
+  fi
+  if [[ -d "$REPO/.git" ]]; then
+    git -C "$REPO" worktree prune
+  fi
+}
+# Why: earlier versions staged builds in $STATE_DIR; nothing reads that copy
+# once staging lives on scratch, and it holds hundreds of MB of internal disk.
+# It stays installable by hand until a newer build has been installed.
+remove_legacy_staged() {
+  local legacy="$STATE_DIR/staged"
+  if [[ "$STAGED_DIR" != "$legacy" && -e "$legacy" ]]; then
+    log "Removing legacy staged build at $legacy."
+    rm -rf "$legacy"
+  fi
+}
+on_exit() {
+  cleanup_run_data || log "Could not fully clean run data in $RUN_DIR."
+  [[ "$(cat "$LOCK_FILE" 2>/dev/null)" == "$$" ]] && rm -f "$LOCK_FILE"
+}
+trap on_exit EXIT
+# Removes leftovers of a run that was killed before its trap could clean up.
+cleanup_run_data
+mkdir -p "$RUN_DIR"
+if [[ "$RUN_DIR" != "$STATE_DIR" ]]; then
+  mkdir -p "$RUN_DIR/tmp"
+  export TMPDIR="$RUN_DIR/tmp"
+fi
+log "Run data directory: $RUN_DIR"
+# Why: Node reports the physical cwd, so vitest names upstream test files by the
+# real worktree path, not the symlinked one; failure ids are relative to it.
+UPSTREAM_ROOT="$(cd "$RUN_DIR" && pwd -P)/upstream"
 
 run_claude() {
   local task="$1" prompt
@@ -100,6 +158,29 @@ orca_running() {
      END { exit !found }' <<<"$processes"
 }
 
+# The last good staged build is only swapped out once its replacement is verified.
+stage_build() {
+  local built="$1" staged="$STAGED_DIR/Orca.app"
+  local incoming="$STAGED_DIR/Orca.app.new" outgoing="$STAGED_DIR/Orca.app.old"
+  mkdir -p "$STAGED_DIR"
+  rm -rf "$incoming" "$outgoing"
+  if ! ditto "$built" "$incoming" || ! codesign --verify --deep --strict "$incoming"; then
+    rm -rf "$incoming"
+    fail "could not stage a verified build at $STAGED_DIR"
+  fi
+  if [[ -e "$staged" ]]; then
+    mv "$staged" "$outgoing"
+  fi
+  if ! mv "$incoming" "$staged"; then
+    if [[ -e "$outgoing" ]]; then
+      mv "$outgoing" "$staged"
+    fi
+    rm -rf "$incoming"
+    fail "could not move the verified build into $staged; previous staged build kept"
+  fi
+  rm -rf "$outgoing"
+}
+
 wait_and_install() {
   local staged="$1" commit="$2"
   local notified=false deadline=$(( $(date +%s) + INSTALL_WAIT_SECONDS ))
@@ -115,6 +196,11 @@ wait_and_install() {
     sleep 60
   done
 
+  # Why: the staged build may sit on an ejectable volume for days; check it
+  # before the installed app is moved aside.
+  if [[ ! -d "$staged" ]] || ! codesign --verify --deep --strict "$staged"; then
+    fail "staged build unavailable; next sync will rebuild"
+  fi
   local backup="$STATE_DIR/previous/Orca.app"
   rm -rf "$STATE_DIR/previous"
   mkdir -p "$STATE_DIR/previous"
@@ -127,6 +213,8 @@ wait_and_install() {
     fail "install of $commit failed; previous Orca restored"
   fi
   echo "$commit" > "$STATE_DIR/installed-commit"
+  rm -rf "$STAGED_DIR"
+  remove_legacy_staged
   log "Installed $commit to $APP_PATH (previous app kept at $backup)."
   notify "Orca updated" "Fork build $commit installed."
   open -a "$APP_PATH" || true
@@ -148,10 +236,10 @@ run_unit_tests() {
 # fixtures, local toolchain differences), so the gate is "the fork adds no
 # failures the same release does not already have", not "everything passes".
 # The baseline is reused only while every input that can change its outcome
-# (release, lockfile, Node, macOS, CPU) is identical.
+# (release and its commit, lockfile, Node, macOS, CPU, checkout root) is identical.
 upstream_baseline_key() {
-  printf '%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest:pnpm-lock.yaml")" \
-    "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" | shasum -a 256 | cut -c1-16
+  printf '%s|%s|%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest_ref^{commit}")" "$(git rev-parse "$latest_ref:pnpm-lock.yaml")" \
+    "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" "$UPSTREAM_ROOT" | shasum -a 256 | cut -c1-16
 }
 
 upstream_report() {
@@ -166,14 +254,14 @@ upstream_report() {
       "$STATE_DIR"/upstream-confirm-*.json "$STATE_DIR"/upstream-confirm-*.log
     log "Running upstream $latest test suite for the failure baseline ($key)."
     git worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
-    git worktree add --force --detach "$UPSTREAM_WORKTREE" "$latest" >/dev/null
+    git worktree add --force --detach "$UPSTREAM_WORKTREE" "$latest_ref" >/dev/null
     (
       cd "$UPSTREAM_WORKTREE" && pnpm install --frozen-lockfile >/dev/null 2>&1 || exit 1
       run_unit_tests "$report" || true
       [[ -s "$report" ]] || exit 1
       # Re-run upstream's failing files so only reproducible failures enter the baseline.
       local failing=()
-      while IFS= read -r file; do failing+=("$file"); done < <(node "$COMPARE" --files "$report" "$UPSTREAM_WORKTREE")
+      while IFS= read -r file; do failing+=("$file"); done < <(node "$COMPARE" --files "$report" "$UPSTREAM_ROOT")
       if (( ${#failing[@]} > 0 )); then
         log "Confirming ${#failing[@]} failing upstream file(s)."
         run_unit_tests "$confirm" "${failing[@]}" || true
@@ -190,19 +278,19 @@ upstream_report() {
 }
 
 verify() {
-  node --test fork-sync/compare-test-failures.test.mjs >&2 || return 1
+  node --test fork-sync/*.test.mjs >&2 || return 1
   # Why: build:mac packages x64 and arm64, which needs both native variants installed.
   pnpm run install:release >&2 || return 1
   # Why: build:mac bundles the mobile web client, which resolves React Native from mobile/'s own install.
   (cd mobile && pnpm install --frozen-lockfile) >&2 || return 1
   pnpm run tc >&2 || return 1
   local baseline
-  local fork_report="$STATE_DIR/fork-tests.json" retry_report="$STATE_DIR/fork-retry.json"
+  local fork_report="$FORK_REPORT" retry_report="$RETRY_REPORT"
   baseline="$(upstream_report)" || { log "Could not produce the upstream test report."; return 1; }
   rm -f "$fork_report" "$retry_report" "${fork_report%.json}.log" "${retry_report%.json}.log"
   run_unit_tests "$fork_report" || true
   [[ -s "$fork_report" ]] || { log "Fork test run produced no report."; return 1; }
-  if node "$COMPARE" "$baseline" "$UPSTREAM_WORKTREE" "$fork_report" "$REPO" > "$INTRODUCED_FILE"; then
+  if node "$COMPARE" "$baseline" "$UPSTREAM_ROOT" "$fork_report" "$REPO" > "$INTRODUCED_FILE"; then
     return 0
   fi
   # Re-run only the affected files once so a flaky test cannot block the sync.
@@ -213,7 +301,7 @@ verify() {
     log "Re-running ${#files[@]} file(s) with fork-only failures."
     run_unit_tests "$retry_report" "${files[@]}" || true
     if [[ -s "$retry_report" ]] \
-      && node "$COMPARE" "$baseline" "$UPSTREAM_WORKTREE" "$retry_report" "$REPO" "${files[@]}" > "$INTRODUCED_FILE"; then
+      && node "$COMPARE" "$baseline" "$UPSTREAM_ROOT" "$retry_report" "$REPO" "${files[@]}" > "$INTRODUCED_FILE"; then
       return 0
     fi
   fi
@@ -233,7 +321,9 @@ if [[ ! -d "$REPO/.git" ]]; then
 fi
 cd "$REPO"
 git fetch --quiet origin || fail "could not fetch origin"
-git fetch --quiet upstream --tags || fail "could not fetch upstream tags"
+# Why: upstream releases live only in their own namespace, so a fork tag can
+# neither pose as a release nor block the fetch by sharing a release's name.
+git fetch --quiet --prune --no-tags upstream '+refs/tags/*:refs/upstream-tags/*' || fail "could not fetch upstream tags into refs/upstream-tags"
 # This clone belongs to the job alone, so it always restarts from the pushed branch.
 git checkout --quiet -B "$BRANCH" "origin/$BRANCH"
 git reset --quiet --hard "origin/$BRANCH"
@@ -242,17 +332,29 @@ git clean -fdq
 latest="$(gh release view --repo "$UPSTREAM_REPO" --json tagName,isPrerelease --jq 'select(.isPrerelease == false) | .tagName')"
 [[ "$latest" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "unexpected latest release tag '$latest'"
 log "Latest stable upstream release: $latest"
+latest_ref="refs/upstream-tags/$latest"
+git rev-parse --quiet --verify "$latest_ref^{commit}" >/dev/null || fail "upstream release $latest is missing from refs/upstream-tags"
 
 pre_merge="$(git rev-parse HEAD)"
 merged_new_release=false
-if git merge-base --is-ancestor "$latest" HEAD; then
+if git merge-base --is-ancestor "$latest_ref" HEAD; then
   log "$latest is already merged into $BRANCH."
 else
   merged_new_release=true
-  if ! git merge --no-ff --no-edit -m "chore(fork): merge upstream $latest" "$latest"; then
+  if ! git merge --no-ff --no-edit -m "chore(fork): merge upstream $latest" "$latest_ref"; then
     log "Merge has conflicts: $(git diff --name-only --diff-filter=U | tr '\n' ' ')"
-    run_claude "Resolve every merge conflict from merging upstream release $latest into $BRANCH. Run \`git diff --name-only --diff-filter=U\` to list them." \
-      || { git merge --abort; fail "Claude conflict resolution session failed"; }
+    auto_resolved="$(node "$RESOLVE_UNTOUCHED" "$REPO" "$pre_merge")" \
+      || { git merge --abort; fail "automatic pre-resolution of untouched conflicts failed"; }
+    if [[ -n "$auto_resolved" ]]; then
+      log "Took upstream $latest for conflicts in files the fork never modified: $(tr '\n' ' ' <<<"$auto_resolved")"
+    fi
+    if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+      log "Conflicts left for Claude: $(git diff --name-only --diff-filter=U | tr '\n' ' ')"
+      run_claude "Resolve every merge conflict from merging upstream release $latest into $BRANCH. Run \`git diff --name-only --diff-filter=U\` to list them." \
+        || { git merge --abort; fail "Claude conflict resolution session failed"; }
+    else
+      log "Every conflict was in a file the fork never modified; skipping the Claude session."
+    fi
     changed_by_merge=()
     while IFS= read -r file; do changed_by_merge+=("$file"); done < <(git diff --name-only "$pre_merge" --)
     if [[ -n "$(git diff --name-only --diff-filter=U)" ]] \
@@ -303,10 +405,8 @@ else
   log "Pushed $BRANCH ($current) to origin."
 fi
 
-staged="$STATE_DIR/staged/Orca.app"
-rm -rf "$STATE_DIR/staged"
-mkdir -p "$STATE_DIR/staged"
-ditto "$built_app" "$staged"
+stage_build "$built_app"
+staged="$STAGED_DIR/Orca.app"
 
 kill "$caffeinate_pid" 2>/dev/null || true
 wait_and_install "$staged" "$current"

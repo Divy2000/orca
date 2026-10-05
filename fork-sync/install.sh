@@ -11,6 +11,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 mkdir -p "$STATE_DIR/bin" "$HOME/Library/Logs/orca-fork-sync" "$HOME/Library/LaunchAgents"
 install -m 755 "$SRC_DIR/orca-fork-sync.sh" "$STATE_DIR/bin/orca-fork-sync.sh"
 install -m 644 "$SRC_DIR/compare-test-failures.mjs" "$STATE_DIR/bin/compare-test-failures.mjs"
+install -m 644 "$SRC_DIR/resolve-untouched-conflicts.mjs" "$STATE_DIR/bin/resolve-untouched-conflicts.mjs"
 # Why: Orca's build scripts call `pnpm` directly; pin the repo's pnpm version.
 cat > "$STATE_DIR/bin/pnpm" <<'SHIM'
 #!/bin/bash
