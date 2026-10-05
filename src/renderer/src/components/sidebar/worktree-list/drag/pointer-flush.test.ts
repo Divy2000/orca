@@ -7,11 +7,28 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushWorktreePointerDragFrame, type WorktreePointerDragFrameArgs } from './pointer-flush'
 import { NO_WORKTREE_SIDEBAR_DROP_TARGET, WORKTREE_ROW_DRAG_INITIAL_STATE } from './row-state'
 
+const terminalDrop = vi.hoisted(() => {
+  const boardTarget: { status: string | null; isPinDrop: boolean } = {
+    status: null,
+    isPinDrop: false
+  }
+  return { boardTarget, update: vi.fn(), end: vi.fn(), payload: vi.fn() }
+})
+
 vi.mock('../../workspace-kanban-sidebar-drop', () => ({
   clearWorkspaceKanbanSidebarDropTargetVisual: vi.fn(),
   hasWorkspaceKanbanSidebarDropBoard: () => true,
   isWorkspaceKanbanSidebarDropPointInBoard: () => false,
-  updateWorkspaceKanbanSidebarDropTargetVisual: () => ({ status: null, isPinDrop: false })
+  updateWorkspaceKanbanSidebarDropTargetVisual: () => terminalDrop.boardTarget
+}))
+
+vi.mock('@/components/terminal-pane/terminal-session-drop', () => ({
+  updateTerminalSessionPointerDrop: terminalDrop.update,
+  endTerminalSessionPointerDrop: terminalDrop.end
+}))
+
+vi.mock('./terminal-session-pointer-drop', () => ({
+  resolveWorktreePointerTerminalSessionDrag: terminalDrop.payload
 }))
 
 vi.mock('./pointer-commit', () => ({ commitWorktreePointerDrop: vi.fn() }))
@@ -19,6 +36,10 @@ vi.mock('./pointer-commit', () => ({ commitWorktreePointerDrop: vi.fn() }))
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  terminalDrop.update.mockReset()
+  terminalDrop.end.mockReset()
+  terminalDrop.payload.mockReset()
+  terminalDrop.boardTarget = { status: null, isPinDrop: false }
 })
 
 function setup() {
@@ -50,7 +71,6 @@ function setup() {
       preview: document.createElement('div'),
       previewOffsetX: 20,
       previewOffsetY: 20,
-      workspaceBoardDragPreviewRequested: false,
       frameId: null,
       reorderIntent: null,
       latestBoardDropTarget: null,
@@ -78,8 +98,6 @@ function setup() {
       onReorderWorktrees: vi.fn(),
       onPinWorktrees: vi.fn()
     },
-    workspaceBoardOpen: false,
-    onWorkspaceBoardDragPreviewStart: vi.fn(),
     onWorkspaceBoardDragPreviewCommit: vi.fn(),
     shouldShowWorkspaceBoardDropIndicator: () => false,
     setDragOverStatus: vi.fn(),
@@ -160,6 +178,48 @@ describe('combined nesting and animated reordering', () => {
   })
 })
 
+describe('workspace card over a terminal pane', () => {
+  const PAYLOAD = { paneKey: 'tab-a:11111111-1111-4111-8111-111111111111', worktreeId: 'child' }
+
+  it('given a pane edge under the card, it targets the pane instead of a sidebar slot', () => {
+    const t = setup()
+    terminalDrop.payload.mockReturnValue(PAYLOAD)
+    terminalDrop.update.mockReturnValue({ kind: 'pane-split' })
+
+    flushWorktreePointerDragFrame(t.args)
+    t.tick(200)
+
+    expect(terminalDrop.update).toHaveBeenCalledWith({
+      clientX: 100,
+      clientY: 300,
+      payload: PAYLOAD
+    })
+    expect(t.state().dropIndicatorY).toBeNull()
+    expect(t.state().previewOffsetsByWorktreeId.size).toBe(0)
+  })
+
+  it('given the card over the board, it offers no terminal target', () => {
+    const t = setup()
+    terminalDrop.payload.mockReturnValue(PAYLOAD)
+    terminalDrop.boardTarget = { status: 'done', isPinDrop: false }
+
+    flushWorktreePointerDragFrame(t.args)
+
+    expect(terminalDrop.update).toHaveBeenCalledWith({ clientX: 100, clientY: 300, payload: null })
+  })
+
+  it('given no pane under the card, it keeps reordering in the sidebar', () => {
+    const t = setup()
+    terminalDrop.payload.mockReturnValue(PAYLOAD)
+    terminalDrop.update.mockReturnValue(null)
+
+    flushWorktreePointerDragFrame(t.args)
+    t.tick(160)
+
+    expect(t.state().dropIndicatorY).toBe(300)
+  })
+})
+
 describe('stationary pointer autoscroll', () => {
   it.each([1, -1])('keeps the gap tracking slots while scrolling in direction %s', (direction) => {
     const t = setup()
@@ -229,6 +289,7 @@ describe('Escape during pointer dragging', () => {
     expect(cancelFrame).toHaveBeenCalledWith(12)
     expect(cancelFrame).toHaveBeenCalledWith(13)
     expect(t.cancelBoard).toHaveBeenCalledOnce()
+    expect(terminalDrop.end).toHaveBeenCalled()
     window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }))
     expect(commitWorktreePointerDrop).not.toHaveBeenCalled()
     expect(t.result.current.worktreeDragState).toBe(WORKTREE_ROW_DRAG_INITIAL_STATE)

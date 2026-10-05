@@ -4,7 +4,10 @@ import type {
   RuntimeMobileSessionTabsSnapshot,
   RuntimeMobileSessionTerminalTab
 } from '../../shared/runtime-types'
-import { retireTerminalSurfacesFromSnapshot } from './mobile-session-terminal-retirement'
+import {
+  retireLeavesFromTerminalLayout,
+  retireTerminalSurfacesFromSnapshot
+} from './mobile-session-terminal-retirement'
 import { retireTerminalSurfaceFromPersistence } from './mobile-session-terminal-persistence-retirement'
 
 const WORKTREE_ID = 'repo::/worktree'
@@ -264,5 +267,35 @@ describe('mobile session terminal retirement', () => {
 
     expect(result.tabsByWorktree[WORKTREE_ID]).toEqual([])
     expect(result.terminalLayoutsByTabId.terminal).toBeUndefined()
+  })
+})
+
+describe('retireLeavesFromTerminalLayout leaf homes', () => {
+  const home = { worktreeId: 'repo::/foreign', sessionTabId: 'tab-home', sessionLeafId: 'right' }
+  const layout = {
+    root: {
+      type: 'split' as const,
+      direction: 'vertical' as const,
+      first: { type: 'leaf' as const, leafId: 'left' },
+      second: { type: 'leaf' as const, leafId: 'right' }
+    },
+    activeLeafId: 'left',
+    expandedLeafId: null,
+    homeByLeafId: { left: { ...home, sessionLeafId: 'left' }, right: home }
+  }
+
+  it('drops the home entry of a retired leaf and keeps the rest', () => {
+    const retired = retireLeavesFromTerminalLayout(layout, new Set(['right']))
+
+    expect(retired?.homeByLeafId).toEqual({ left: { ...home, sessionLeafId: 'left' } })
+  })
+
+  it('leaves no home entries behind once the only home leaf is retired', () => {
+    const retired = retireLeavesFromTerminalLayout(
+      { ...layout, homeByLeafId: { right: home } },
+      new Set(['right'])
+    )
+
+    expect(retired?.homeByLeafId).toBeUndefined()
   })
 })

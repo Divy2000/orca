@@ -6,6 +6,8 @@ import {
 } from '../hooks/remote-workspace-snapshot-apply'
 import { terminalLayoutNodeEqual } from '../lib/terminal-layout-equality'
 import { createSessionWriteSubscriber } from '../lib/session-write-subscriber'
+import { republishGraphAfterForeignPaneSessionWrite } from '../lib/foreign-pane-graph-republish'
+import { scheduleRuntimeGraphSync } from '../runtime/sync-runtime-graph'
 import { buildActiveViewUnloadPatch } from '../lib/active-view-persist'
 import {
   isIntentionalAppRestartInProgress,
@@ -130,6 +132,7 @@ export function useAppSessionPersistence(): void {
         // Why: route each host's worktree-scoped slice to its own partition; return the local write so the remote-workspace upload chain below keeps its ordering.
         const localWrite = patchWorkspaceSessionByHost(window.api.session, patch, state)
         void localWrite
+        republishGraphAfterForeignPaneSessionWrite(patch, localWrite, scheduleRuntimeGraphSync)
         const uploadAuthorities = captureRemoteWorkspaceUploadAuthorities(state)
         const pendingLayoutEdits = state.pendingDirectSshLayoutEditsByTabId
         if (uploadAuthorities.length > 0) {

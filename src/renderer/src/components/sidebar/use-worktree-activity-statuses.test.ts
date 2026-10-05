@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { shallow } from 'zustand/shallow'
+import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import { selectWorktreeActivityStatuses } from './use-worktree-activity-statuses'
 
 type StatusState = Parameters<typeof selectWorktreeActivityStatuses>[0]
@@ -42,5 +43,68 @@ describe('selectWorktreeActivityStatuses', () => {
         selectWorktreeActivityStatuses(unrelatedUpdate, ['visible'])
       )
     ).toBe(true)
+  })
+})
+
+describe('selectWorktreeActivityStatuses with a pane hosted for another workspace', () => {
+  const W1 = 'repo::/w1'
+  const W2 = 'repo::/w2'
+  const FOREIGN_LEAF = '22222222-2222-4222-8222-222222222222'
+
+  function makeShellTab(id: string, worktreeId: string): TerminalTab {
+    return {
+      id,
+      ptyId: null,
+      worktreeId,
+      title: 'zsh',
+      customTitle: null,
+      color: null,
+      sortOrder: 0,
+      createdAt: 0
+    }
+  }
+
+  function hostedShellState(withHome: boolean): StatusState {
+    return {
+      ...makeStatusState(),
+      tabsByWorktree: {
+        [W1]: [],
+        [W2]: [makeShellTab('host-tab', W2)]
+      },
+      ptyIdsByTabId: { 'host-tab': ['pty-foreign'] },
+      terminalLayoutsByTabId: {
+        'host-tab': {
+          root: { type: 'leaf', leafId: FOREIGN_LEAF },
+          activeLeafId: FOREIGN_LEAF,
+          expandedLeafId: null,
+          ptyIdsByLeafId: { [FOREIGN_LEAF]: 'pty-foreign' },
+          ...(withHome
+            ? {
+                homeByLeafId: {
+                  [FOREIGN_LEAF]: {
+                    worktreeId: W1,
+                    sessionTabId: 'w1-tab',
+                    sessionLeafId: FOREIGN_LEAF
+                  }
+                }
+              }
+            : {})
+        }
+      }
+    }
+  }
+
+  it('given a live shell-only foreign pane then its home is active and the host is inactive', () => {
+    const statuses = selectWorktreeActivityStatuses(hostedShellState(true), [W1, W2])
+
+    expect(statuses.get(W1)).toBe('active')
+    expect(statuses.get(W2)).toBe('inactive')
+  })
+
+  it('given the same pane without a home then the host is active as before', () => {
+    const statuses = selectWorktreeActivityStatuses(hostedShellState(false), [W1, W2])
+
+    expect(statuses.get(W1)).toBe('inactive')
+    expect(statuses.get(W2)).toBe('active')
   })
 })

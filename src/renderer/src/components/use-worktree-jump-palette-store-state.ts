@@ -71,6 +71,7 @@ export function useWorktreeJumpPaletteStoreState({
   const {
     agentStatusByPaneKey,
     runtimePaneTitlesByTabId,
+    runtimePaneTitleLeafIdsByTabId,
     unreadTerminalTabs,
     unreadAgentCompletionPanes
   } = paletteIndexStatus
@@ -157,6 +158,7 @@ export function useWorktreeJumpPaletteStoreState({
     unifiedTabsByWorktree,
     agentStatusByPaneKey,
     runtimePaneTitlesByTabId,
+    runtimePaneTitleLeafIdsByTabId,
     unreadTerminalTabs,
     unreadAgentCompletionPanes,
     openFiles,

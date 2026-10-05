@@ -241,3 +241,49 @@ describe('resolvePtyBoundActiveLeafId', () => {
     expect(activeLeafId).toBe(LEAF_3)
   })
 })
+
+describe('normalizeTerminalLayoutSnapshot leaf homes', () => {
+  const FOREIGN_HOME = {
+    worktreeId: 'repo-1::/work/foreign',
+    sessionTabId: 'tab-home',
+    sessionLeafId: MISSING_LEAF
+  }
+
+  it('moves a home entry onto the minted id when a legacy leaf id is rewritten', () => {
+    const { snapshot } = normalizeTerminalLayoutSnapshot({
+      root: split(LEAF_1, 'legacy-leaf'),
+      activeLeafId: LEAF_1,
+      expandedLeafId: null,
+      homeByLeafId: { 'legacy-leaf': FOREIGN_HOME }
+    })
+
+    const mintedLeafId = snapshot.root?.type === 'split' ? snapshot.root.second : null
+    expect(mintedLeafId).toMatchObject({ type: 'leaf' })
+    const leafId = mintedLeafId?.type === 'leaf' ? mintedLeafId.leafId : ''
+    expect(leafId).not.toBe('legacy-leaf')
+    expect(snapshot.homeByLeafId).toEqual({ [leafId]: FOREIGN_HOME })
+  })
+
+  it('drops a home entry for a leaf id that appears twice in the root', () => {
+    const { snapshot } = normalizeTerminalLayoutSnapshot({
+      root: split(LEAF_1, LEAF_1),
+      activeLeafId: LEAF_1,
+      expandedLeafId: null,
+      homeByLeafId: { [LEAF_1]: FOREIGN_HOME }
+    })
+
+    expect(snapshot.homeByLeafId).toBeUndefined()
+  })
+
+  it('leaves a clean layout with home entries untouched', () => {
+    const layout: TerminalLayoutSnapshot = {
+      ...splitLayout(),
+      homeByLeafId: { [LEAF_2]: FOREIGN_HOME }
+    }
+
+    const normalized = normalizeTerminalLayoutSnapshot(layout)
+
+    expect(normalized.changed).toBe(false)
+    expect(normalized.snapshot.homeByLeafId).toEqual({ [LEAF_2]: FOREIGN_HOME })
+  })
+})

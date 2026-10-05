@@ -205,6 +205,14 @@ export function preserveMissingWorkspaceSessionTerminalBindings(
     if (titlesByLeafId) {
       layout.titlesByLeafId = titlesByLeafId
     }
+    const homeByLeafId = preserveMissingLeafRecordEntries(
+      priorLayout.homeByLeafId,
+      layout.homeByLeafId,
+      liveLeafIds
+    )
+    if (homeByLeafId) {
+      layout.homeByLeafId = homeByLeafId
+    }
   }
 
   return session

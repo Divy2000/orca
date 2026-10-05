@@ -8,6 +8,7 @@ import {
   destroyRemovedBrowserWebview
 } from '../store/slices/browser-webview-cleanup'
 import type { TerminalActivationController } from './use-terminal-activation-actions'
+import { installForeignOnlyTerminalTabReconciler } from './terminal-pane/terminal-pane-foreign-only-reconciliation'
 
 export function useTerminalWindowLifecycle(controller: TerminalActivationController): void {
   const {
@@ -21,6 +22,7 @@ export function useTerminalWindowLifecycle(controller: TerminalActivationControl
     setActiveTabType,
     windowCloseAfterDirtyRef
   } = controller
+  useEffect(() => installForeignOnlyTerminalTabReconciler(useAppStore), [])
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent): void => {
       if (isIntentionalAppRestartInProgress()) {

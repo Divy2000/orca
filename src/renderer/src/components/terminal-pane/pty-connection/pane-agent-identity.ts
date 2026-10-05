@@ -81,7 +81,12 @@ export function installPaneAgentIdentity(session: ConnectPanePtySession): void {
       return
     }
     const neutralTitle = session.neutralTerminalTitle()
-    session.deps.setRuntimePaneTitle(session.deps.tabId, session.pane.id, neutralTitle)
+    session.deps.setRuntimePaneTitle(
+      session.deps.tabId,
+      session.pane.id,
+      neutralTitle,
+      session.pane.leafId
+    )
     if (session.manager.getActivePane()?.id === session.pane.id) {
       session.deps.updateTabTitle(session.deps.tabId, neutralTitle)
     }

@@ -51,6 +51,7 @@ function mockAgent({
 let mockAgents: DashboardAgentRowData[] = []
 let mockAgentActivityDisplayMode: 'compact' | 'full' | undefined
 let mockTabsByWorktree: Record<string, { id: string }[]> = {}
+let mockTerminalLayoutsByTabId: Record<string, unknown> = {}
 let mockStructuredTabIds = new Set<string>()
 let mockAgentStatusByPaneKey: Record<string, { worktreeId?: string }> = {}
 let mockActiveTabId: string | null = null
@@ -82,7 +83,7 @@ function buildMockStoreState(): Record<string, unknown> {
     setActiveTab: mockSetActiveTab,
     setActiveTabType: mockSetActiveTabType,
     tabsByWorktree: mockTabsByWorktree,
-    terminalLayoutsByTabId: {},
+    terminalLayoutsByTabId: mockTerminalLayoutsByTabId,
     ptyIdsByTabId: {},
     runtimePaneTitlesByTabId: {},
     sendPromptToSidebarAgentTarget: vi.fn(),
@@ -164,6 +165,7 @@ describe('WorktreeCardAgents activation', () => {
     mockAgents = []
     mockAgentActivityDisplayMode = undefined
     mockTabsByWorktree = {}
+    mockTerminalLayoutsByTabId = {}
     mockStructuredTabIds = new Set()
     mockAgentStatusByPaneKey = {}
     mockActiveTabId = null
@@ -200,6 +202,38 @@ describe('WorktreeCardAgents activation', () => {
       tabId
     })
     expect(activationMocks.activateTabAndFocusPane).not.toHaveBeenCalled()
+    expect(staleAgentRowMocks.dismissStaleAgentRowByKey).not.toHaveBeenCalled()
+  })
+
+  it('given a row for a pane hosted in another workspace tab then it focuses the host tab', async () => {
+    mockAgentActivityDisplayMode = 'full'
+    const paneKey = makePaneKey('host-tab', LEAF_B)
+    mockAgents = [
+      mockAgent({ paneKey, tabId: 'host-tab', agentType: 'codex', prompt: 'p', worktreeId: 'wt-1' })
+    ]
+    mockAgentStatusByPaneKey = { [paneKey]: { worktreeId: 'wt-1' } }
+    mockTabsByWorktree = { 'wt-1': [], 'wt-2': [{ id: 'host-tab' }] }
+    mockTerminalLayoutsByTabId = {
+      'host-tab': {
+        root: { type: 'leaf', leafId: LEAF_B },
+        activeLeafId: LEAF_B,
+        expandedLeafId: null,
+        homeByLeafId: {
+          [LEAF_B]: { worktreeId: 'wt-1', sessionTabId: 'tab-1', sessionLeafId: LEAF_B }
+        }
+      }
+    }
+    const { default: WorktreeCardAgents } = await import('./WorktreeCardAgents')
+
+    renderToStaticMarkup(<WorktreeCardAgents worktreeId="wt-1" />)
+    capturedRowActivations[0].onActivate('host-tab', paneKey)
+
+    expect(activationMocks.activateAndRevealWorktree).toHaveBeenCalledWith('wt-2')
+    expect(activationMocks.activateTabAndFocusPane).toHaveBeenCalledWith('host-tab', LEAF_B, {
+      ackPaneKeyOnSuccess: paneKey,
+      flashFocusedPane: true,
+      scrollToBottomIfOutputSinceLastView: true
+    })
     expect(staleAgentRowMocks.dismissStaleAgentRowByKey).not.toHaveBeenCalled()
   })
 

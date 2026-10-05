@@ -1,9 +1,11 @@
 import { useAppStore } from '@/store'
 import { getAgentStatusEpochNow } from '@/lib/agent-status-epoch-clock'
 import { getWorktreeIdsWithLiveAgent, isInactiveWorkspace } from '@/lib/worktree-activity-state'
+import { selectHomedTerminalLayouts } from '@/lib/terminal-pane-home-index'
 import { getWorktreeIdsWithStructuredChat } from './visible-worktree-activity-inputs'
 import type { AgentStatusEntry } from '../../../../shared/agent-status-types'
 import type { Tab } from '../../../../shared/tab-types'
+import type { TerminalLayoutSnapshot } from '../../../../shared/terminal-tab-types'
 
 type TabLike = { id: string }
 
@@ -16,11 +18,13 @@ type SleepStateInput = {
   ptyIdsByTabId?: Record<string, string[]> | null
   browserTabsByWorktree?: Record<string, readonly TabLike[]> | null
   unifiedTabsByWorktree?: Record<string, Tab[]> | null
+  terminalLayoutsByTabId?: Record<string, TerminalLayoutSnapshot> | null
 }
 
 type LiveAgentGeneration = {
   agentStatusByPaneKey: SleepStateInput['agentStatusByPaneKey']
   tabsByWorktree: SleepStateInput['tabsByWorktree']
+  homedLayouts: Record<string, TerminalLayoutSnapshot>
   agentStatusNow: number
   worktreeIds: ReadonlySet<string>
 }
@@ -33,10 +37,12 @@ let liveAgentGeneration: LiveAgentGeneration | null = null
 // snapshot would.
 function selectWorktreeIdsWithLiveAgent(state: SleepStateInput): ReadonlySet<string> {
   const agentStatusNow = getAgentStatusEpochNow(state.agentStatusEpoch ?? 0)
+  const homedLayouts = selectHomedTerminalLayouts(state.terminalLayoutsByTabId)
   if (
     liveAgentGeneration &&
     liveAgentGeneration.agentStatusByPaneKey === state.agentStatusByPaneKey &&
     liveAgentGeneration.tabsByWorktree === state.tabsByWorktree &&
+    liveAgentGeneration.homedLayouts === homedLayouts &&
     liveAgentGeneration.agentStatusNow === agentStatusNow
   ) {
     return liveAgentGeneration.worktreeIds
@@ -44,11 +50,13 @@ function selectWorktreeIdsWithLiveAgent(state: SleepStateInput): ReadonlySet<str
   const worktreeIds = getWorktreeIdsWithLiveAgent(
     state.agentStatusByPaneKey,
     state.tabsByWorktree,
-    agentStatusNow
+    agentStatusNow,
+    homedLayouts
   )
   liveAgentGeneration = {
     agentStatusByPaneKey: state.agentStatusByPaneKey,
     tabsByWorktree: state.tabsByWorktree,
+    homedLayouts,
     agentStatusNow,
     worktreeIds
   }
@@ -75,7 +83,8 @@ export function useIsSleepingWorktree(worktreeId: string): boolean {
       state.ptyIdsByTabId,
       state.browserTabsByWorktree,
       selectWorktreeIdsWithLiveAgent(state),
-      getWorktreeIdsWithStructuredChat(state.unifiedTabsByWorktree)
+      getWorktreeIdsWithStructuredChat(state.unifiedTabsByWorktree),
+      selectHomedTerminalLayouts(state.terminalLayoutsByTabId)
     )
   )
 }

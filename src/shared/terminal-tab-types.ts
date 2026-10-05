@@ -128,6 +128,20 @@ export type TerminalPaneLayoutNode =
       ratio?: number
     }
 
+/** Where a split pane's live PTY really belongs when it sits in a tab of another workspace. */
+export type TerminalLeafHome = {
+  /** The pane's home workspace; the tab's own workspace owns every leaf without an entry. */
+  worktreeId: string
+  /** The pane's tab and leaf in its home workspace before its first cross-workspace move,
+   *  kept so mobile clients see a stable identity across moves. */
+  sessionTabId: string
+  sessionLeafId: string
+  /** Original tab placement in the home workspace, for mobile projection. */
+  slot?: { groupId: string; afterTabId: string | null }
+  color?: string
+  isPinned?: boolean
+}
+
 export type TerminalLayoutSnapshot = {
   root: TerminalPaneLayoutNode | null
   activeLeafId: string | null
@@ -144,4 +158,6 @@ export type TerminalLayoutSnapshot = {
   /** User-assigned pane titles, keyed by stable layout leaf UUID.
    *  Persisted alongside buffers via the existing session:set flow. */
   titlesByLeafId?: Record<string, string>
+  /** Leaves whose live PTY belongs to another workspace. Absent for unmixed tabs. */
+  homeByLeafId?: Record<string, TerminalLeafHome>
 }

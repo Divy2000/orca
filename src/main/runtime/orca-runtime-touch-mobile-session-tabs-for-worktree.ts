@@ -8,6 +8,7 @@ import type {
   RuntimeSyncedLeaf
 } from '../../shared/runtime-types'
 import { retireTerminalSurfacesFromSnapshot } from './mobile-session-terminal-retirement'
+import { terminalLayoutContainsLeaf } from './headless-terminal-split-layout'
 
 export class OrcaRuntimeWithTouchMobileSessionTabsForWorktree extends OrcaRuntimeWithPublishPtyBackedMobileSessionTerminal {
   /** Bump the snapshot version and emit, coalesced unless `immediate`.
@@ -104,13 +105,45 @@ export class OrcaRuntimeWithTouchMobileSessionTabsForWorktree extends OrcaRuntim
   protected reconcileMobileSessionRetirementFences(
     leaves: readonly RuntimeSyncedLeaf[]
   ): RuntimeSyncedLeaf[] {
-    return leaves.filter((leaf) =>
-      this.isMobileSessionSurfaceMembershipAllowed(
-        leaf.worktreeId,
-        leaf.tabId,
-        leaf.leafId,
-        leaf.ptyId
+    return leaves.filter((leaf) => {
+      if (
+        this.isMobileSessionSurfaceMembershipAllowed(
+          leaf.worktreeId,
+          leaf.tabId,
+          leaf.leafId,
+          leaf.ptyId
+        )
+      ) {
+        return true
+      }
+      // Why: a pane hosted in another workspace's split is attributed to its home, but its surface
+      // lives in the host tab, whose pane registered the PTY under the host's worktree.
+      const hostWorktreeId = this.tabs.get(leaf.tabId)?.worktreeId
+      return (
+        hostWorktreeId !== undefined &&
+        hostWorktreeId !== leaf.worktreeId &&
+        this.hostLayoutAttestsForeignLeaf(hostWorktreeId, leaf) &&
+        this.isMobileSessionSurfaceMembershipAllowed(
+          hostWorktreeId,
+          leaf.tabId,
+          leaf.leafId,
+          leaf.ptyId
+        )
       )
+    })
+  }
+
+  /** Whether the host's persisted session records this leaf's claimed home and PTY in that tab;
+   *  the graph alone cannot reassign a host-owned PTY to another workspace. */
+  protected hostLayoutAttestsForeignLeaf(hostWorktreeId: string, leaf: RuntimeSyncedLeaf): boolean {
+    const session = this.getWorkspaceSessionForWorktree(hostWorktreeId)
+    const layout = session?.terminalLayoutsByTabId?.[leaf.tabId]
+    return Boolean(
+      leaf.ptyId &&
+      session?.tabsByWorktree?.[hostWorktreeId]?.some((tab) => tab.id === leaf.tabId) &&
+      terminalLayoutContainsLeaf(layout?.root, leaf.leafId) &&
+      layout?.homeByLeafId?.[leaf.leafId]?.worktreeId === leaf.worktreeId &&
+      layout.ptyIdsByLeafId?.[leaf.leafId] === leaf.ptyId
     )
   }
 

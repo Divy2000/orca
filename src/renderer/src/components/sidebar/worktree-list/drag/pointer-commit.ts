@@ -14,6 +14,11 @@ import type {
 } from './drop-commit-context'
 import type { WorktreeSidebarStatusDropTarget } from '../../worktree-sidebar-drop-preview'
 import { NO_WORKTREE_SIDEBAR_DROP_TARGET, type WorktreePointerDrag } from './row-state'
+import {
+  commitTerminalSessionDrop,
+  resolveTerminalSessionDropTarget
+} from '@/components/terminal-pane/terminal-session-drop'
+import { resolveWorktreePointerTerminalSessionDrag } from './terminal-session-pointer-drop'
 
 type PointerDropCommitArgs = {
   event: PointerEvent
@@ -48,8 +53,23 @@ function commitStatusOrPinDrop(
   })
 }
 
-// Resolve where a released pointer drag lands: workspace board lane, lineage parent,
-// status/pin section, or a reorder slot inside the source group.
+/** Joins the dragged workspace's terminal into the pane split under the release. True when a pane
+ *  was under the pointer, even if the move was refused: its toast explains, and the sidebar must not
+ *  reorder from a release that was never over it. */
+function commitTerminalPaneDrop(args: PointerDropCommitArgs): boolean {
+  const payload = resolveWorktreePointerTerminalSessionDrag(args.drag)
+  const target = payload
+    ? resolveTerminalSessionDropTarget(args.event.clientX, args.event.clientY, payload)
+    : null
+  if (!payload || !target) {
+    return false
+  }
+  commitTerminalSessionDrop(payload, target)
+  return true
+}
+
+// Resolve where a released pointer drag lands: workspace board lane, terminal pane, lineage
+// parent, status/pin section, or a reorder slot inside the source group.
 export function commitWorktreePointerDrop(args: PointerDropCommitArgs): void {
   const { event, drag, ctx } = args
   if (!ctx.refreshWorktreeDragSession()) {
@@ -79,7 +99,7 @@ export function commitWorktreePointerDrop(args: PointerDropCommitArgs): void {
       ),
       groups: getWorkspaceKanbanSidebarDropGroups()
     })
-  } else {
+  } else if (!commitTerminalPaneDrop(args)) {
     const preferredStatusTarget = ctx.getEligibleLineageDropTarget(
       ctx.scrollRef.current
         ? getPointerDropStatusTarget({

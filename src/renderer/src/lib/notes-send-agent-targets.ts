@@ -124,7 +124,12 @@ function deriveTitleHintAgentTarget(
   }
 
   const paneTitles = state.runtimePaneTitlesByTabId[tab.id]
-  const paneTitleResolution = resolveRuntimePaneTitleLeafResolution(layout, paneTitles, leafId)
+  const paneTitleResolution = resolveRuntimePaneTitleLeafResolution(
+    layout,
+    paneTitles,
+    leafId,
+    state.runtimePaneTitleLeafIdsByTabId?.[tab.id]
+  )
   const titleEvidence = detectTitleHintPaneEvidence(paneTitleResolution, tab.title)
   if (!titleEvidence) {
     // Why: launch metadata predates TUI identity; require a matching current title

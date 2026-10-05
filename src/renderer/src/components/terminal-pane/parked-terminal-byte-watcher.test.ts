@@ -106,6 +106,9 @@ describe('startParkedTerminalByteWatcher', () => {
     vi.advanceTimersByTime(0)
   }
 
+  const expectPaneTitle = (title: string): void =>
+    expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, PANE_ID, title, LEAF_ID)
+
   async function startWatcher(
     overrides: Partial<ParkedTerminalByteWatcherOptions> = {}
   ): Promise<{ dispose: () => void; ptyWrite: ReturnType<typeof vi.fn> }> {
@@ -165,8 +168,8 @@ describe('startParkedTerminalByteWatcher', () => {
     flushSideEffects()
 
     expect(mockStoreState.setRuntimePaneTitle.mock.calls).toEqual([
-      [TAB_ID, PANE_ID, '⠋ Build feature'],
-      [TAB_ID, PANE_ID, IDLE_TITLE]
+      [TAB_ID, PANE_ID, '⠋ Build feature', LEAF_ID],
+      [TAB_ID, PANE_ID, IDLE_TITLE, LEAF_ID]
     ])
     expect(mockStoreState.updateTabTitle.mock.calls).toEqual([
       [TAB_ID, '⠋ Build feature'],
@@ -187,8 +190,8 @@ describe('startParkedTerminalByteWatcher', () => {
     flushSideEffects()
 
     expect(mockStoreState.setRuntimePaneTitle.mock.calls).toEqual([
-      [TAB_ID, PANE_ID, 'Cursor Agent'],
-      [TAB_ID, PANE_ID, '⠋ Cursor Agent']
+      [TAB_ID, PANE_ID, 'Cursor Agent', LEAF_ID],
+      [TAB_ID, PANE_ID, '⠋ Cursor Agent', LEAF_ID]
     ])
     expect(mockStoreState.updateTabTitle.mock.calls).toEqual([
       [TAB_ID, 'Cursor Agent'],
@@ -203,7 +206,7 @@ describe('startParkedTerminalByteWatcher', () => {
     emit(IDLE_TITLE_OSC)
     flushSideEffects()
 
-    expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, PANE_ID, IDLE_TITLE)
+    expectPaneTitle(IDLE_TITLE)
     expect(mockStoreState.updateTabTitle).not.toHaveBeenCalled()
     dispose()
   })
@@ -488,7 +491,7 @@ describe('startParkedTerminalByteWatcher', () => {
 
     emit(IDLE_TITLE_OSC)
     flushSideEffects()
-    expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, PANE_ID, IDLE_TITLE)
+    expectPaneTitle(IDLE_TITLE)
 
     dispose()
     expect(mockStoreState.clearRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, PANE_ID)
@@ -565,7 +568,7 @@ describe('startParkedTerminalByteWatcher', () => {
     flushSideEffects()
 
     expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledTimes(1)
-    expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, 2, IDLE_TITLE)
+    expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, 2, IDLE_TITLE, LEAF_ID)
     second.dispose()
   })
 
@@ -587,11 +590,7 @@ describe('startParkedTerminalByteWatcher', () => {
       ]
     })
 
-    expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(
-      TAB_ID,
-      PANE_ID,
-      '⠋ Remote build'
-    )
+    expectPaneTitle('⠋ Remote build')
     dispose()
   })
 
@@ -758,7 +757,7 @@ describe('startParkedTerminalByteWatcher', () => {
       await Promise.resolve()
 
       expect(getSideEffectSnapshot).toHaveBeenCalledWith(PTY_ID)
-      expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, PANE_ID, IDLE_TITLE)
+      expectPaneTitle(IDLE_TITLE)
       expect(mockStoreState.updateTabTitle).toHaveBeenCalledWith(TAB_ID, IDLE_TITLE)
       expect(mockStoreState.markWorktreeUnread).not.toHaveBeenCalled()
       expect(mockStoreState.setCacheTimerStartedAt).not.toHaveBeenCalled()
@@ -835,7 +834,8 @@ describe('startParkedTerminalByteWatcher', () => {
       expect(mockStoreState.setRuntimePaneTitle).toHaveBeenLastCalledWith(
         TAB_ID,
         PANE_ID,
-        'Build feature'
+        'Build feature',
+        LEAF_ID
       )
       expect(mockStoreState.setCacheTimerStartedAt).toHaveBeenLastCalledWith(PANE_KEY, null)
       vi.advanceTimersByTime(NOTIFICATION_GRACE_MS * 4)
@@ -858,7 +858,7 @@ describe('startParkedTerminalByteWatcher', () => {
       )
       vi.advanceTimersByTime(NOTIFICATION_GRACE_MS * 4)
 
-      expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, PANE_ID, IDLE_TITLE)
+      expectPaneTitle(IDLE_TITLE)
       expect(mockStoreState.markWorktreeUnread).not.toHaveBeenCalled()
       expect(mockStoreState.setCacheTimerStartedAt).not.toHaveBeenCalled()
       expect(dispatchTerminalNotification).not.toHaveBeenCalled()
@@ -944,7 +944,7 @@ describe('startParkedTerminalByteWatcher', () => {
       const { dispose } = await startWatcher()
 
       await dispatchFacts([{ kind: 'title', normalizedTitle: IDLE_TITLE, rawTitle: IDLE_TITLE }])
-      expect(mockStoreState.setRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, PANE_ID, IDLE_TITLE)
+      expectPaneTitle(IDLE_TITLE)
 
       dispose()
       expect(mockStoreState.clearRuntimePaneTitle).toHaveBeenCalledWith(TAB_ID, PANE_ID)

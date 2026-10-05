@@ -2,11 +2,12 @@ import type React from 'react'
 import type { WorkspaceStatus } from '../../../../../../shared/worktree/types'
 import {
   clearWorkspaceKanbanSidebarDropTargetVisual,
-  hasWorkspaceKanbanSidebarDropBoard,
   isWorkspaceKanbanSidebarDropPointInBoard,
   updateWorkspaceKanbanSidebarDropTargetVisual
 } from '../../workspace-kanban-sidebar-drop'
 import { updateSidebarDragPreviewPosition } from '../../worktree-sidebar-pointer-drag-dom'
+import { updateTerminalSessionPointerDrop } from '@/components/terminal-pane/terminal-session-drop'
+import { resolveWorktreePointerTerminalSessionDrag } from './terminal-session-pointer-drop'
 import { getPointerDropStatusTarget, shouldPreferSidebarStatusDropTarget } from './status-target'
 import type { WorktreeDropCommitContext } from './drop-commit-context'
 import {
@@ -25,8 +26,6 @@ const REORDER_INTENT_DELAY_MS = 160
 export type WorktreePointerDragFrameArgs = {
   drag: WorktreePointerDrag
   ctx: WorktreeDropCommitContext
-  workspaceBoardOpen: boolean
-  onWorkspaceBoardDragPreviewStart: () => void
   onWorkspaceBoardDragPreviewCommit: () => void
   shouldShowWorkspaceBoardDropIndicator: (
     worktreeIds: readonly string[],
@@ -98,15 +97,6 @@ export function flushWorktreePointerDragFrame(args: WorktreePointerDragFrameArgs
     ctx.clearWorktreeDrag()
     return
   }
-  // Why: show the board preview as soon as a card drag begins so the drop target is visible up front, not only at the sidebar edge.
-  if (
-    !drag.workspaceBoardDragPreviewRequested &&
-    !args.workspaceBoardOpen &&
-    !hasWorkspaceKanbanSidebarDropBoard()
-  ) {
-    drag.workspaceBoardDragPreviewRequested = true
-    args.onWorkspaceBoardDragPreviewStart()
-  }
   const boardTarget = updateWorkspaceKanbanSidebarDropTargetVisual({
     x: drag.currentX,
     y: drag.currentY,
@@ -124,7 +114,13 @@ export function flushWorktreePointerDragFrame(args: WorktreePointerDragFrameArgs
   if (isWorkspaceKanbanSidebarDropPointInBoard(drag.currentX, drag.currentY)) {
     args.onWorkspaceBoardDragPreviewCommit()
   }
-  if (boardTarget.status || boardTarget.isPinDrop) {
+  const overBoard = Boolean(boardTarget.status || boardTarget.isPinDrop)
+  const terminalTarget = updateTerminalSessionPointerDrop({
+    clientX: drag.currentX,
+    clientY: drag.currentY,
+    payload: overBoard ? null : resolveWorktreePointerTerminalSessionDrag(drag)
+  })
+  if (overBoard || terminalTarget) {
     drag.reorderIntent = null
     drag.latestStatusDropTarget = null
     clearInsertionLine(args)

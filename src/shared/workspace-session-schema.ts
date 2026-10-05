@@ -15,7 +15,6 @@ import { z } from 'zod'
 import { closedTerminalTabTombstoneSchema } from './closed-terminal-tab-tombstones'
 import type { WorkspaceKey } from './folder-workspace-types'
 import type { TabGroupLayoutNode } from './tab-types'
-import type { TerminalPaneLayoutNode } from './terminal-tab-types'
 import type { TuiAgent } from './tui-agent'
 import type { WorkspaceSessionState } from './workspace-session-state-types'
 import { terminalTabIdSchema } from './terminal-tab-id-schema'
@@ -37,46 +36,15 @@ import {
   tabContentTypeSchema,
   workspaceVisibleTabTypeSchema
 } from './workspace-session-tab-type-schema'
+import {
+  leafStringsSchema,
+  terminalLayoutSnapshotSchema
+} from './workspace-session-terminal-layout-schema'
 import { salvagedField, salvagedOptional, salvagingArray, salvagingRecord } from './zod-salvage'
 
-// ─── Terminal pane layout (recursive) ───────────────────────────────
-
-const terminalPaneSplitDirectionSchema = z.enum(['vertical', 'horizontal'])
 const workspaceKeySchema = z.custom<WorkspaceKey>(
   (value) => typeof value === 'string' && isWorkspaceKey(value)
 )
-
-// Why: z.lazy + type annotation keeps the recursive inference working without
-// forcing zod to resolve the whole tree at definition time. Discriminated on `type` because a
-// plain union re-tries the leaf branch for every split node of every restored terminal layout.
-const terminalPaneLayoutNodeSchema: z.ZodType<TerminalPaneLayoutNode> = z.lazy(() =>
-  z.discriminatedUnion('type', [
-    z.object({
-      type: z.literal('leaf'),
-      leafId: z.string()
-    }),
-    z.object({
-      type: z.literal('split'),
-      direction: terminalPaneSplitDirectionSchema,
-      first: terminalPaneLayoutNodeSchema,
-      second: terminalPaneLayoutNodeSchema,
-      ratio: z.number().optional()
-    })
-  ])
-)
-
-const leafStringsSchema = salvagingRecord(z.string(), z.string())
-
-const terminalLayoutSnapshotSchema = z.object({
-  root: terminalPaneLayoutNodeSchema.nullable(),
-  activeLeafId: z.string().nullable(),
-  expandedLeafId: z.string().nullable(),
-  chatLeafId: z.string().optional(),
-  ptyIdsByLeafId: salvagedOptional('ptyIdsByLeafId', leafStringsSchema),
-  buffersByLeafId: salvagedOptional('buffersByLeafId', leafStringsSchema),
-  scrollbackRefsByLeafId: salvagedOptional('scrollbackRefsByLeafId', leafStringsSchema),
-  titlesByLeafId: salvagedOptional('titlesByLeafId', leafStringsSchema)
-})
 
 // ─── Terminal tab (legacy) ──────────────────────────────────────────
 

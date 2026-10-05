@@ -7,11 +7,11 @@ import { closeWebRuntimeTerminal } from '@/runtime/web-runtime-session'
 import { resolveLeafCloseCopyKind } from '../terminal/terminal-close-copy-kind'
 import { RUNNING_CLOSE_PROBE_TIMEOUT_MS } from '../terminal/running-terminal-close-guard'
 import { probePtyRunningWork } from '../terminal/pty-running-work-probe'
+import { detachTerminalPaneToTab, isTerminalTabStripDropTarget } from './terminal-pane-tab-detach'
 import {
-  detachTerminalPaneToTab,
-  isTerminalTabStripDropTarget,
-  resolveTerminalTabStripDropTarget
-} from './terminal-pane-tab-detach'
+  commitTerminalPaneCrossTabDrop,
+  resolveTerminalPaneExternalDropTarget
+} from './terminal-pane-external-drop'
 import { clearPaneTerminalError } from './terminal-error-accumulation'
 import type { TerminalPaneBindingController } from './use-terminal-pane-layout-bindings'
 import { retireUnboundIpcTerminalPane } from './retire-unbound-ipc-terminal-pane'
@@ -218,20 +218,26 @@ export function useTerminalPaneCloseActions(controller: TerminalPaneBindingContr
       if (panes.length <= 1 || !panes.some((pane) => pane.id === sourcePaneId)) {
         return null
       }
-      return resolveTerminalTabStripDropTarget({
+      return resolveTerminalPaneExternalDropTarget({
         clientX,
         clientY,
-        groupsByWorktree: useAppStore.getState().groupsByWorktree,
-        worktreeId
+        tabId,
+        worktreeId,
+        sourceLeafId: managerRef.current?.getLeafId(sourcePaneId) ?? null,
+        state: useAppStore.getState()
       })
     },
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- Preserve the pre-split dependency contract.
-    [worktreeId]
+    [tabId, worktreeId]
   )
   const handleExternalPaneDrop = useCallback(
     (sourcePaneId: number, target: PaneExternalDropTarget): boolean => {
       if (!isTerminalTabStripDropTarget(target)) {
-        return false
+        return commitTerminalPaneCrossTabDrop({
+          tabId,
+          leafId: managerRef.current?.getLeafId(sourcePaneId) ?? null,
+          target
+        })
       }
       const fallbackPtyId = paneTransportsRef.current.get(sourcePaneId)?.getPtyId() ?? null
       const sourcePaneCwd = paneCwdRef.current.get(sourcePaneId)

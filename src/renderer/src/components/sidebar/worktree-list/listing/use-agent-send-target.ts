@@ -33,6 +33,11 @@ export function useAgentSendTargetWorktreeId(): string | null {
   const agentTargetRuntimePaneTitlesByTabId = useAppStore((s) =>
     agentSendPopoverTargetMode ? s.runtimePaneTitlesByTabId : EMPTY_RUNTIME_PANE_TITLES_BY_TAB_ID
   )
+  const agentTargetRuntimePaneTitleLeafIdsByTabId = useAppStore((s) =>
+    agentSendPopoverTargetMode
+      ? s.runtimePaneTitleLeafIdsByTabId
+      : EMPTY_RUNTIME_PANE_TITLES_BY_TAB_ID
+  )
   return useMemo(() => {
     void agentTargetStatusEpoch
     if (!agentSendPopoverTargetMode) {
@@ -44,7 +49,8 @@ export function useAgentSendTargetWorktreeId(): string | null {
         tabsByWorktree: agentTargetTabsByWorktree,
         terminalLayoutsByTabId: agentTargetTerminalLayoutsByTabId,
         ptyIdsByTabId: agentTargetPtyIdsByTabId,
-        runtimePaneTitlesByTabId: agentTargetRuntimePaneTitlesByTabId
+        runtimePaneTitlesByTabId: agentTargetRuntimePaneTitlesByTabId,
+        runtimePaneTitleLeafIdsByTabId: agentTargetRuntimePaneTitleLeafIdsByTabId
       },
       agentSendPopoverTargetMode.worktreeId
     )
@@ -59,6 +65,7 @@ export function useAgentSendTargetWorktreeId(): string | null {
     agentTargetTabsByWorktree,
     agentTargetTerminalLayoutsByTabId,
     agentTargetPtyIdsByTabId,
-    agentTargetRuntimePaneTitlesByTabId
+    agentTargetRuntimePaneTitlesByTabId,
+    agentTargetRuntimePaneTitleLeafIdsByTabId
   ])
 }

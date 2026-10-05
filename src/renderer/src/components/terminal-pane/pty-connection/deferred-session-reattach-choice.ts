@@ -105,7 +105,10 @@ export function runDeferredSessionReattachChoice(session: ConnectPanePtySession)
     (candidateReattachSessionId &&
     !isRemoteRuntimePtyId(candidateReattachSessionId) &&
     !candidateHasEagerBuffer &&
-    isSessionOwnedByWorktree(candidateReattachSessionId, session.deps.worktreeId)
+    // Why the attribution too: a pane moved into another workspace's split keeps the PTY its home spawned.
+    (isSessionOwnedByWorktree(candidateReattachSessionId, session.deps.worktreeId) ||
+      (session.deps.attributionWorktreeId !== undefined &&
+        isSessionOwnedByWorktree(candidateReattachSessionId, session.deps.attributionWorktreeId)))
       ? candidateReattachSessionId
       : null)
   recordPtyConnectDiagnostic(

@@ -7,6 +7,9 @@ import type {
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { DropAgentStatusByWorktreeOptions, RetainedAgentEntry } from './agent-status-contract'
 import type { AgentStatusTabPrefixDropState } from './agent-status-drop-reducer'
+import { buildTerminalPaneHomeIndex } from '@/lib/terminal-pane-home-index'
+
+type PaneHomeState = Pick<AppState, 'tabsByWorktree' | 'terminalLayoutsByTabId'>
 
 export function paneKeyMatchesAnyTabPrefix(paneKey: string, tabPrefixes: string[]): boolean {
   for (const prefix of tabPrefixes) {
@@ -67,7 +70,7 @@ export function getLeafIdFromPaneKey(paneKey: string): string | null {
 }
 
 export function findCompletedOrphanPaneKeysForTabClose(
-  state: AgentStatusTabPrefixDropState,
+  state: Pick<AgentStatusTabPrefixDropState, 'agentStatusByPaneKey'> & PaneHomeState,
   worktreeId: string | undefined,
   prefix: string
 ): string[] {
@@ -75,13 +78,22 @@ export function findCompletedOrphanPaneKeysForTabClose(
     return []
   }
   const openTabIds = new Set((state.tabsByWorktree[worktreeId] ?? []).map((tab) => tab.id))
+  const paneHomeIndex = buildTerminalPaneHomeIndex(
+    state.tabsByWorktree,
+    state.terminalLayoutsByTabId
+  )
   const paneKeys: string[] = []
   for (const [paneKey, entry] of Object.entries(state.agentStatusByPaneKey)) {
     if (paneKey.startsWith(prefix) || entry.state !== 'done' || entry.worktreeId !== worktreeId) {
       continue
     }
     const tabId = getTabIdFromPaneKey(paneKey)
-    if (!tabId || openTabIds.has(tabId)) {
+    // Why: a pane hosted in another workspace's open tab is still mounted, not orphaned.
+    if (
+      !tabId ||
+      openTabIds.has(tabId) ||
+      paneHomeIndex.homeWorktreeIdByPaneKey.get(paneKey) === worktreeId
+    ) {
       continue
     }
     paneKeys.push(paneKey)
@@ -99,10 +111,17 @@ export function isRecentlyClosedAgentStatusTab(
   return closedTabs[tabId] === true
 }
 
-export function findAgentPaneWorktreeId(state: AppState, paneKey: string): string | null {
+export function findAgentPaneWorktreeId(state: PaneHomeState, paneKey: string): string | null {
   const tabId = getTabIdFromPaneKey(paneKey)
   if (!tabId) {
     return null
+  }
+  const homeWorktreeId = buildTerminalPaneHomeIndex(
+    state.tabsByWorktree,
+    state.terminalLayoutsByTabId
+  ).homeWorktreeIdByPaneKey.get(paneKey)
+  if (homeWorktreeId) {
+    return homeWorktreeId
   }
   for (const [worktreeId, tabs] of Object.entries(state.tabsByWorktree)) {
     if (tabs.some((tab) => tab.id === tabId)) {
@@ -113,7 +132,7 @@ export function findAgentPaneWorktreeId(state: AppState, paneKey: string): strin
 }
 
 export function findTabForAgentEntry(
-  state: AppState,
+  state: PaneHomeState,
   worktreeId: string,
   entry: AgentStatusEntry
 ): TerminalTab | undefined {
@@ -121,7 +140,22 @@ export function findTabForAgentEntry(
   if (!tabId) {
     return undefined
   }
-  return (state.tabsByWorktree[worktreeId] ?? []).find((tab) => tab.id === tabId)
+  const ownTab = (state.tabsByWorktree[worktreeId] ?? []).find((tab) => tab.id === tabId)
+  if (ownTab) {
+    return ownTab
+  }
+  // Why: a foreign pane belongs to its home but its tab lives in the host workspace.
+  const paneHomeIndex = buildTerminalPaneHomeIndex(
+    state.tabsByWorktree,
+    state.terminalLayoutsByTabId
+  )
+  if (paneHomeIndex.homeWorktreeIdByPaneKey.get(entry.paneKey) !== worktreeId) {
+    return undefined
+  }
+  const hostWorktreeId = paneHomeIndex.hostWorktreeIdByTabId.get(tabId)
+  return hostWorktreeId
+    ? state.tabsByWorktree[hostWorktreeId]?.find((tab) => tab.id === tabId)
+    : undefined
 }
 
 export function getRetainedFallbackTab(entry: AgentStatusEntry, worktreeId: string): TerminalTab {

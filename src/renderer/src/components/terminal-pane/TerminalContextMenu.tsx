@@ -5,6 +5,7 @@ import {
   Copy,
   Eraser,
   GitFork,
+  House,
   Maximize2,
   MessageSquare,
   Minimize2,
@@ -35,6 +36,7 @@ import { isMacPlatform, nativeChatToggleShortcutLabel } from '../native-chat/nat
 import { AgentSessionContinuationMenuItem } from './AgentSessionContinuationMenuItem'
 import type { TerminalQuickCommandMenuHost } from '@/hooks/use-terminal-quick-command-hosts'
 import { TerminalQuickCommandsSubmenu } from './TerminalQuickCommandsSubmenu'
+import { terminalPaneBackHomeLabel } from './TerminalPaneBackHomeButton'
 
 type TerminalContextMenuProps = {
   open: boolean
@@ -78,6 +80,9 @@ type TerminalContextMenuProps = {
   onCopyPaneId: () => void
   canCopyAgentSessionId: boolean
   onCopyAgentSessionId: () => void
+  /** The pane's home workspace name when it is hosted from another workspace; null otherwise. */
+  backHomeLabel: string | null
+  onSendPaneHome: () => void
 }
 
 export default function TerminalContextMenu(props: TerminalContextMenuProps): React.JSX.Element {
@@ -167,7 +172,9 @@ function TerminalContextMenuItems({
   onCopyTerminalId,
   onCopyPaneId,
   canCopyAgentSessionId,
-  onCopyAgentSessionId
+  onCopyAgentSessionId,
+  backHomeLabel,
+  onSendPaneHome
 }: TerminalContextMenuProps): React.JSX.Element {
   // Why: one primary binding prevents Windows/Linux shortcut labels from forcing row wraps.
   const shortcuts = useMemo(
@@ -245,6 +252,12 @@ function TerminalContextMenuItems({
         </DropdownMenuItem>
       ) : null}
       <DropdownMenuSeparator />
+      {backHomeLabel ? (
+        <DropdownMenuItem onSelect={onSendPaneHome}>
+          <House />
+          {terminalPaneBackHomeLabel(backHomeLabel)}
+        </DropdownMenuItem>
+      ) : null}
       <DropdownMenuItem className="whitespace-nowrap" onSelect={onSplitRight}>
         <PanelRightClose />
         {translate(

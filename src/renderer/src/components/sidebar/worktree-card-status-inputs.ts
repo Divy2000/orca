@@ -1,8 +1,23 @@
 import type { AppState } from '@/store/types'
 import type { PaneForegroundAgentEntry } from '@/store/slices/pane-foreground-agent'
 import { parsePaneKey } from '../../../../shared/stable-pane-id'
-import type { TerminalPaneLayoutNode } from '../../../../shared/terminal-tab-types'
+import type {
+  TerminalLayoutSnapshot,
+  TerminalPaneLayoutNode,
+  TerminalTab
+} from '../../../../shared/terminal-tab-types'
 import { createWorktreeRecordSelector } from '@/store/worktree-record-selector-cache'
+import {
+  buildTerminalPaneHomeIndex,
+  selectHomedTerminalLayouts
+} from '@/lib/terminal-pane-home-index'
+import {
+  collectForeignLeafIdsByTabId,
+  collectHomedPaneStatusInputs,
+  omitForeignPanePtyIds,
+  omitForeignPaneTitles,
+  type HomedPaneStatusInputs
+} from '@/lib/terminal-host-native-pane-inputs'
 
 // Why: these selectors return fresh maps whose top-level values preserve
 // underlying per-tab references, so callers must compare them shallowly.
@@ -151,4 +166,109 @@ export function selectTerminalLayoutRootsForWorktrees(
     }
   }
   return out
+}
+
+type StatusPaneTab = Pick<TerminalTab, 'id' | 'title' | 'launchAgent'>
+
+export type WorktreeStatusPaneInputs = {
+  tabs: readonly StatusPaneTab[]
+  ptyIdsByTabId: Record<string, string[]>
+  runtimePaneTitlesByTabId: Record<string, Record<number, string>>
+  terminalLayoutRootsByTabId: Record<string, TerminalPaneLayoutNode | null | undefined>
+}
+
+export type HostedPaneStatusInputs = {
+  homedLayouts: Record<string, TerminalLayoutSnapshot>
+  /** Panes this worktree owns inside other workspaces' tabs, or null when it has none. */
+  homed: HomedPaneStatusInputs | null
+  runtimePaneTitleLeafIdsByTabId: Readonly<Record<string, Record<number, string>>>
+}
+
+type HostedPaneStatusInputState = Pick<
+  AppState,
+  'runtimePaneTitlesByTabId' | 'ptyIdsByTabId' | 'terminalLayoutsByTabId'
+> &
+  Partial<Pick<AppState, 'runtimePaneTitleLeafIdsByTabId'>> & {
+    tabsByWorktree: Record<string, readonly { id: string }[]>
+  }
+
+const EMPTY_PANE_TITLE_LEAF_IDS: Readonly<Record<string, Record<number, string>>> = Object.freeze(
+  {}
+)
+const EMPTY_HOSTED_PANE_STATUS_INPUTS: HostedPaneStatusInputs = Object.freeze({
+  homedLayouts: Object.freeze({}),
+  homed: null,
+  runtimePaneTitleLeafIdsByTabId: EMPTY_PANE_TITLE_LEAF_IDS
+})
+
+/** The cross-workspace pane facts a worktree's status needs; stable while no pane is hosted. */
+export const selectHostedPaneStatusInputs = createWorktreeRecordSelector<
+  HostedPaneStatusInputState,
+  HostedPaneStatusInputs
+>({
+  readSources: (state) => [
+    state.tabsByWorktree,
+    selectHomedTerminalLayouts(state.terminalLayoutsByTabId),
+    state.ptyIdsByTabId,
+    state.runtimePaneTitlesByTabId,
+    state.runtimePaneTitleLeafIdsByTabId
+  ],
+  empty: EMPTY_HOSTED_PANE_STATUS_INPUTS,
+  build: (state, worktreeId) => {
+    const homedLayouts = selectHomedTerminalLayouts(state.terminalLayoutsByTabId)
+    const runtimePaneTitleLeafIdsByTabId =
+      state.runtimePaneTitleLeafIdsByTabId ?? EMPTY_PANE_TITLE_LEAF_IDS
+    return {
+      homedLayouts,
+      homed: collectHomedPaneStatusInputs(
+        buildTerminalPaneHomeIndex(state.tabsByWorktree, homedLayouts),
+        worktreeId,
+        homedLayouts,
+        state.ptyIdsByTabId,
+        state.runtimePaneTitlesByTabId,
+        runtimePaneTitleLeafIdsByTabId
+      ),
+      runtimePaneTitleLeafIdsByTabId
+    }
+  }
+})
+
+/**
+ * The terminal inputs a worktree's status dot reads: its own tabs minus panes they only host,
+ * plus the panes it owns inside other workspaces' tabs. Returns `own` unchanged when neither applies.
+ */
+export function resolveWorktreeStatusPaneInputs(
+  own: WorktreeStatusPaneInputs,
+  worktreeId: string,
+  hosted: HostedPaneStatusInputs
+): WorktreeStatusPaneInputs {
+  const foreignLeafIds = collectForeignLeafIdsByTabId(own.tabs, hosted.homedLayouts, worktreeId)
+  const ptyIdsByTabId = omitForeignPanePtyIds(
+    own.ptyIdsByTabId,
+    hosted.homedLayouts,
+    foreignLeafIds
+  )
+  const runtimePaneTitlesByTabId = omitForeignPaneTitles(
+    own.runtimePaneTitlesByTabId,
+    hosted.homedLayouts,
+    foreignLeafIds,
+    own.ptyIdsByTabId,
+    hosted.runtimePaneTitleLeafIdsByTabId
+  )
+  const { homed } = hosted
+  if (!homed) {
+    return ptyIdsByTabId === own.ptyIdsByTabId &&
+      runtimePaneTitlesByTabId === own.runtimePaneTitlesByTabId
+      ? own
+      : { ...own, ptyIdsByTabId, runtimePaneTitlesByTabId }
+  }
+  return {
+    tabs: [...own.tabs, ...homed.tabs],
+    ptyIdsByTabId: { ...ptyIdsByTabId, ...homed.ptyIdsByTabId },
+    runtimePaneTitlesByTabId: { ...runtimePaneTitlesByTabId, ...homed.runtimePaneTitlesByTabId },
+    terminalLayoutRootsByTabId: {
+      ...own.terminalLayoutRootsByTabId,
+      ...homed.terminalLayoutRootsByTabId
+    }
+  }
 }

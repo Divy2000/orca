@@ -4,7 +4,7 @@ import type {
   MigrationUnsupportedPtyEntry
 } from '../../../../shared/agent-status-types'
 import type { Tab } from '../../../../shared/tab-types'
-import type { TerminalTab } from '../../../../shared/terminal-tab-types'
+import type { TerminalLayoutSnapshot, TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { RetainedAgentEntry } from '@/store/slices/agent-status'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import { getLiveEntriesFullRebuildCountForTests } from './worktree-agent-live-index-patch'
@@ -335,6 +335,121 @@ describe('selectLiveAgentStatusEntriesForWorktree', () => {
     }
 
     expect(selectLiveAgentStatusEntriesForWorktree(state, 'wt-1')).toEqual([])
+  })
+})
+
+describe('selectLiveAgentStatusEntriesForWorktree foreign pane attribution', () => {
+  const HOST_LEAF = '44444444-4444-4444-8444-444444444444'
+  const FOREIGN_LEAF = '55555555-5555-4555-8555-555555555555'
+  const FOREIGN_PANE = makePaneKey('tab-w2', FOREIGN_LEAF)
+
+  function hostLayout(withHome: boolean): TerminalLayoutSnapshot {
+    return {
+      root: {
+        type: 'split',
+        direction: 'vertical',
+        first: { type: 'leaf', leafId: HOST_LEAF },
+        second: { type: 'leaf', leafId: FOREIGN_LEAF }
+      },
+      activeLeafId: HOST_LEAF,
+      expandedLeafId: null,
+      ...(withHome
+        ? {
+            homeByLeafId: {
+              [FOREIGN_LEAF]: {
+                worktreeId: 'wt-1',
+                sessionTabId: 'tab-1',
+                sessionLeafId: FOREIGN_LEAF
+              }
+            }
+          }
+        : {})
+    }
+  }
+
+  function hostedState(withHome: boolean) {
+    return {
+      tabsByWorktree: {
+        'wt-1': [makeTab('tab-1')],
+        'wt-2': [makeTab('tab-w2')]
+      },
+      terminalLayoutsByTabId: { 'tab-w2': hostLayout(withHome) },
+      agentStatusByPaneKey: {
+        [FOREIGN_PANE]: makeEntry(FOREIGN_PANE, 1000, {
+          state: 'working',
+          worktreeId: 'wt-1'
+        })
+      },
+      migrationUnsupportedByPtyId: {},
+      retainedAgentsByPaneKey: {}
+    }
+  }
+
+  it('given a W1 working row on a pane hosted in a W2 tab then only W1 lists it', () => {
+    const state = hostedState(true)
+
+    expect(selectLiveAgentStatusEntriesForWorktree(state, 'wt-1')).toHaveLength(1)
+    expect(selectLiveAgentStatusEntriesForWorktree(state, 'wt-2')).toEqual([])
+  })
+
+  it('given a remote row whose pane key collides with a local foreign pane then it stays with its reported workspace', () => {
+    const state = hostedState(true)
+    const remote = makeEntry(FOREIGN_PANE, 1000, {
+      state: 'working',
+      worktreeId: 'wt-remote',
+      connectionId: 'ssh-1'
+    })
+    const remoteState = { ...state, agentStatusByPaneKey: { [FOREIGN_PANE]: remote } }
+
+    expect(selectLiveAgentStatusEntriesForWorktree(remoteState, 'wt-remote')).toEqual([remote])
+    expect(selectLiveAgentStatusEntriesForWorktree(remoteState, 'wt-1')).toEqual([])
+  })
+
+  it('rebuckets the row when the pane gains a home without a status change', () => {
+    const native = hostedState(false)
+    expect(selectLiveAgentStatusEntriesForWorktree(native, 'wt-2')).toHaveLength(1)
+
+    const homed = {
+      ...native,
+      terminalLayoutsByTabId: { 'tab-w2': hostLayout(true) }
+    }
+    expect(selectLiveAgentStatusEntriesForWorktree(homed, 'wt-2')).toEqual([])
+    expect(selectLiveAgentStatusEntriesForWorktree(homed, 'wt-1')).toHaveLength(1)
+  })
+})
+
+describe('selectMigrationUnsupportedEntriesForWorktree foreign pane attribution', () => {
+  it('given a migration row on a pane hosted in a W2 tab with home W1 then only W1 lists it', () => {
+    const foreignLeaf = '55555555-5555-4555-8555-555555555555'
+    const unsupported: MigrationUnsupportedPtyEntry = {
+      ptyId: 'pty-foreign',
+      worktreeId: 'wt-1',
+      tabId: 'tab-w2',
+      leafId: foreignLeaf,
+      paneKey: makePaneKey('tab-w2', foreignLeaf),
+      reason: 'legacy-numeric-pane-key',
+      source: 'local',
+      updatedAt: 1000
+    }
+    const state = {
+      tabsByWorktree: { 'wt-1': [makeTab('tab-1')], 'wt-2': [makeTab('tab-w2')] },
+      terminalLayoutsByTabId: {
+        'tab-w2': {
+          root: { type: 'leaf' as const, leafId: foreignLeaf },
+          activeLeafId: foreignLeaf,
+          expandedLeafId: null,
+          homeByLeafId: {
+            [foreignLeaf]: { worktreeId: 'wt-1', sessionTabId: 'tab-1', sessionLeafId: foreignLeaf }
+          }
+        }
+      },
+      agentStatusByPaneKey: {},
+      migrationUnsupportedByPtyId: { 'pty-foreign': unsupported },
+      retainedAgentsByPaneKey: {}
+    }
+
+    expect(selectMigrationUnsupportedEntriesForWorktree(state, 'wt-1')).toEqual([unsupported])
+    expect(selectMigrationUnsupportedEntriesForWorktree(state, 'wt-2')).toEqual([])
   })
 })
 

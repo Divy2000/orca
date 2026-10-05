@@ -244,6 +244,60 @@ describe('captureTerminalShutdownLayout', () => {
     expect(layout.titlesByLeafId).toEqual({ [LEAF_ID]: 'local shell' })
   })
 
+  it('carries prior home entries for mounted panes and drops them for unmounted leaves', async () => {
+    const { captureTerminalShutdownLayout } = await import('./terminal-shutdown-layout-capture')
+    const pane = {
+      id: 1,
+      leafId: LEAF_ID,
+      stablePaneId: LEAF_ID,
+      terminal: mockTerminal(1_000),
+      serializeAddon: { serialize: vi.fn(() => '') }
+    }
+    const home = {
+      worktreeId: 'repo-1::/work/foreign',
+      sessionTabId: 'tab-home',
+      sessionLeafId: LEAF_ID_2
+    }
+
+    const layout = captureTerminalShutdownLayout({
+      manager: { getPanes: () => [pane], getActivePane: () => pane } as never,
+      container: mockRootForPane(1),
+      expandedPaneId: null,
+      paneTransports: new Map(),
+      paneTitlesByPaneId: {},
+      existingLayout: {
+        root: null,
+        activeLeafId: null,
+        expandedLeafId: null,
+        homeByLeafId: { [LEAF_ID]: home, [LEAF_ID_2]: home }
+      }
+    })
+
+    expect(layout.homeByLeafId).toEqual({ [LEAF_ID]: home })
+  })
+
+  it('omits the home map when no prior entry survives', async () => {
+    const { captureTerminalShutdownLayout } = await import('./terminal-shutdown-layout-capture')
+    const pane = {
+      id: 1,
+      leafId: LEAF_ID,
+      stablePaneId: LEAF_ID,
+      terminal: mockTerminal(1_000),
+      serializeAddon: { serialize: vi.fn(() => '') }
+    }
+
+    const layout = captureTerminalShutdownLayout({
+      manager: { getPanes: () => [pane], getActivePane: () => pane } as never,
+      container: mockRootForPane(1),
+      expandedPaneId: null,
+      paneTransports: new Map(),
+      paneTitlesByPaneId: {},
+      existingLayout: undefined
+    })
+
+    expect(Object.hasOwn(layout, 'homeByLeafId')).toBe(false)
+  })
+
   it('caps shutdown scrollback snapshots by UTF-8 bytes', async () => {
     const { captureTerminalShutdownLayout } = await import('./terminal-shutdown-layout-capture')
     const multibyteRow = 'é'.repeat(1024)

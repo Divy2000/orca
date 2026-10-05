@@ -2,6 +2,7 @@ import type { ManagedPane } from '@/lib/pane-manager/pane-manager'
 import type { PaneSpawnHints } from '@/lib/pane-manager/pane-manager-types'
 import { useAppStore } from '@/store'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
+import { resolveTerminalLeafHomeWorktreeId } from '../../../../shared/terminal-pane-home'
 import { createOsc52OscHandler } from './osc52-clipboard'
 import {
   showOsc52ClipboardBlockedToast,
@@ -175,6 +176,11 @@ export function createTerminalPaneCreatedHandler(
     )
     const panePtyBinding = connectPanePty(pane, manager, {
       ...ptyDeps,
+      attributionWorktreeId: resolveTerminalLeafHomeWorktreeId(
+        useAppStore.getState().terminalLayoutsByTabId[deps.tabId],
+        ptyDeps.worktreeId,
+        pane.leafId
+      ),
       ...(onQueuedStartupSpawned ? { onQueuedStartupSpawned } : {}),
       ...(effectiveSpawnHints?.cwdPromise
         ? {

@@ -122,6 +122,7 @@ export function buildWorktreePurgeState(
     localOnlyScrollbackByTabId: omitByTabId(s.localOnlyScrollbackByTabId),
     ptyIdsByTabId: omitByTabId(s.ptyIdsByTabId),
     runtimePaneTitlesByTabId: omitByTabId(s.runtimePaneTitlesByTabId),
+    runtimePaneTitleLeafIdsByTabId: omitByTabId(s.runtimePaneTitleLeafIdsByTabId),
     automaticAgentResumeClaimsByTabId: omitByTabId(s.automaticAgentResumeClaimsByTabId),
     nativeChatLaunchPromptByTabId: omitByTabId(s.nativeChatLaunchPromptByTabId),
     nativeChatLaunchDraftByTabId: omitByTabId(s.nativeChatLaunchDraftByTabId),

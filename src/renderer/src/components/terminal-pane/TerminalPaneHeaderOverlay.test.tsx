@@ -51,7 +51,9 @@ function renderOverlay({
   canContinueAgentSessionInNewSession = false,
   onContinueAgentSessionInNewSession = vi.fn(),
   renameValue = '',
-  renamingPaneId = null
+  renamingPaneId = null,
+  paneHomeLabels,
+  onSendPaneHome = vi.fn<(pane: ManagedPane) => void>()
 }: {
   paneTitles: Record<number, string>
   paneCount?: number
@@ -65,6 +67,8 @@ function renderOverlay({
   onContinueAgentSessionInNewSession?: ReturnType<typeof vi.fn>
   renameValue?: string
   renamingPaneId?: number | null
+  paneHomeLabels?: Readonly<Record<string, string>>
+  onSendPaneHome?: (pane: ManagedPane) => void
 }): {
   container: HTMLDivElement
   onClosePane: ReturnType<typeof vi.fn>
@@ -116,6 +120,8 @@ function renderOverlay({
         onRenameSubmit={onRenameSubmit as () => void}
         onRenameCancel={vi.fn()}
         onRenameBlur={vi.fn()}
+        paneHomeLabels={paneHomeLabels}
+        onSendPaneHome={onSendPaneHome}
       />
     )
   })
@@ -270,5 +276,77 @@ describe('TerminalPaneHeaderOverlay', () => {
     expect(onContinueAgentSessionInNewSession).toHaveBeenCalledWith(
       expect.objectContaining({ id: 1 })
     )
+  })
+
+  it('offers Back to its workspace only on a pane hosted from another workspace', () => {
+    const onSendPaneHome = vi.fn<(pane: ManagedPane) => void>()
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: '' },
+      paneHomeLabels: { 'leaf-2': 'feature-login' },
+      onSendPaneHome
+    })
+
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label="Back to feature-login"]'
+    )
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]?.closest('.pane-title-bar')?.hasAttribute('data-active-pane')).toBe(false)
+
+    act(() => buttons[0]?.click())
+
+    expect(onSendPaneHome).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }))
+  })
+
+  it('shows no Back to button when every pane is native', () => {
+    const { container } = renderOverlay({ paneTitles: { 1: '', 2: '' } })
+
+    expect(container.querySelector('button[aria-label^="Back to"]')).toBeNull()
+  })
+
+  it('labels a pane hosted from another workspace with its home in a solid header', () => {
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: '' },
+      paneHomeLabels: { 'leaf-2': 'feature-login' }
+    })
+
+    const [nativeHeader, foreignHeader] = container.querySelectorAll('.pane-title-bar')
+    const label = foreignHeader?.querySelector('[data-pane-home-label]')
+    expect(label?.textContent).toContain('feature-login')
+    expect(foreignHeader?.textContent).toContain('From feature-login')
+    expect(foreignHeader?.hasAttribute('data-chromeless')).toBe(false)
+    expect(nativeHeader?.querySelector('[data-pane-home-label]')).toBeNull()
+    expect(nativeHeader?.hasAttribute('data-chromeless')).toBe(true)
+  })
+
+  it('keeps the home label beside a pane title', () => {
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: 'build' },
+      paneHomeLabels: { 'leaf-2': 'feature-login' }
+    })
+
+    const foreignHeader = container.querySelectorAll('.pane-title-bar')[1]
+    expect(foreignHeader?.querySelector('[data-pane-home-label]')?.textContent).toContain(
+      'feature-login'
+    )
+    expect(foreignHeader?.querySelector('.pane-title-text')?.textContent).toBe('build')
+  })
+
+  it('shows the home label in a background tab header too', () => {
+    const { container } = renderOverlay({
+      paneTitles: { 1: '', 2: '' },
+      showAlwaysOnHeaders: false,
+      paneHomeLabels: { 'leaf-2': 'feature-login' }
+    })
+
+    expect(container.querySelectorAll('.pane-title-bar')).toHaveLength(1)
+    expect(container.querySelector('[data-pane-home-label]')?.textContent).toContain(
+      'feature-login'
+    )
+  })
+
+  it('shows no home label when every pane is native', () => {
+    const { container } = renderOverlay({ paneTitles: { 1: '', 2: '' } })
+
+    expect(container.querySelector('[data-pane-home-label]')).toBeNull()
   })
 })

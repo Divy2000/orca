@@ -133,6 +133,7 @@ type TerminalTabActivityInput = {
   // pane-status map; it is the flag cache's invalidation key (see above).
   agentStatusEpoch?: number
   runtimePaneTitlesByTabId?: Record<string, Record<number, string>>
+  runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string>>
   ptyIdsByTabId?: Record<string, string[]>
   terminalLayout?: TerminalLayoutSnapshot
 }
@@ -148,6 +149,7 @@ export function resolveTerminalTabActivityStatus({
   agentStatusByPaneKey,
   agentStatusEpoch,
   runtimePaneTitlesByTabId,
+  runtimePaneTitleLeafIdsByTabId,
   ptyIdsByTabId,
   terminalLayout
 }: TerminalTabActivityInput): TerminalTabActivityStatus {
@@ -160,6 +162,7 @@ export function resolveTerminalTabActivityStatus({
     agentStatusPaneIdsByTabId: { [tab.id]: flags?.paneIds ?? EMPTY_PANE_IDS },
     stalePaneIdsByTabId: { [tab.id]: flags?.stalePaneIds ?? EMPTY_PANE_IDS },
     terminalLayoutsByTabId: terminalLayout ? { [tab.id]: terminalLayout } : undefined,
+    runtimePaneTitleLeafIdsByTabId,
     hasPermission: flags?.hasPermission ?? false,
     hasLiveWorking: flags?.hasLiveWorking ?? false,
     hasLiveMonitoring: flags?.hasLiveMonitoring ?? false,

@@ -9,6 +9,7 @@ export type SendTargetInputsState = Pick<
   | 'terminalLayoutsByTabId'
   | 'ptyIdsByTabId'
   | 'runtimePaneTitlesByTabId'
+  | 'runtimePaneTitleLeafIdsByTabId'
 >
 
 export type SendTargetControlInputsState = Pick<
@@ -30,7 +31,8 @@ export const EMPTY_SEND_TARGET_INPUTS: RunningAgentTargetState = Object.freeze({
   tabsByWorktree: {},
   terminalLayoutsByTabId: {},
   ptyIdsByTabId: {},
-  runtimePaneTitlesByTabId: {}
+  runtimePaneTitlesByTabId: {},
+  runtimePaneTitleLeafIdsByTabId: {}
 })
 
 // Why: the picker mode and freshness epoch are irrelevant to every card except
@@ -59,7 +61,8 @@ export function selectSendTargetInputs(
     tabsByWorktree: s.tabsByWorktree,
     terminalLayoutsByTabId: s.terminalLayoutsByTabId,
     ptyIdsByTabId: s.ptyIdsByTabId,
-    runtimePaneTitlesByTabId: s.runtimePaneTitlesByTabId
+    runtimePaneTitlesByTabId: s.runtimePaneTitlesByTabId,
+    runtimePaneTitleLeafIdsByTabId: s.runtimePaneTitleLeafIdsByTabId
   }
 }
 

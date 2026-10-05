@@ -52,4 +52,45 @@ describe('normalizeTerminalLayoutSnapshotForPersistence', () => {
 
     expect(collectLayoutLeafIdsInOrder(normalized.snapshot.root)).toEqual([STABLE_A, STABLE_B])
   })
+
+  it('moves a leaf home entry onto the rewritten leaf id', () => {
+    const home = { worktreeId: 'wt-foreign', sessionTabId: 'tab-home', sessionLeafId: STABLE_A }
+    const input: TerminalLayoutSnapshot = {
+      ...splitOf('pane:1', STABLE_B),
+      homeByLeafId: { 'pane:1': home }
+    }
+
+    const normalized = normalizeTerminalLayoutSnapshotForPersistence(
+      input,
+      splitOf(STABLE_A, STABLE_B)
+    )
+
+    expect(normalized.snapshot.homeByLeafId).toEqual({ [STABLE_A]: home })
+  })
+
+  it('reports a rewrite when only a home entry key changes', () => {
+    const home = { worktreeId: 'wt-foreign', sessionTabId: 'tab-home', sessionLeafId: STABLE_A }
+    const input: TerminalLayoutSnapshot = {
+      ...splitOf(STABLE_A, STABLE_B),
+      homeByLeafId: { [STABLE_B]: home, 'stale-leaf': home }
+    }
+
+    const normalized = normalizeTerminalLayoutSnapshotForPersistence(input)
+
+    expect(normalized.changed).toBe(true)
+    expect(normalized.snapshot.homeByLeafId).toEqual({ [STABLE_B]: home })
+  })
+
+  it('leaves a clean layout with home entries untouched', () => {
+    const home = { worktreeId: 'wt-foreign', sessionTabId: 'tab-home', sessionLeafId: STABLE_A }
+    const input: TerminalLayoutSnapshot = {
+      ...splitOf(STABLE_A, STABLE_B),
+      homeByLeafId: { [STABLE_B]: home }
+    }
+
+    const normalized = normalizeTerminalLayoutSnapshotForPersistence(input)
+
+    expect(normalized.changed).toBe(false)
+    expect(normalized.snapshot).toBe(input)
+  })
 })

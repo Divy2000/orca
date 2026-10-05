@@ -250,6 +250,9 @@ async function hibernatePaneIfStillEligible(
       tabId: confirmedCandidate.tabId,
       leafId: confirmedCandidate.leafId,
       ptyId: confirmedCandidate.targetPtyIds[0],
+      ...(confirmedCandidate.homeWorktreeId
+        ? { homeWorktreeId: confirmedCandidate.homeWorktreeId }
+        : {}),
       ...(runtimeEnvironmentId
         ? { expectedRuntimePtyId: confirmedCandidate.expectedRuntimePtyIds[0] }
         : {})

@@ -28,6 +28,12 @@ export function collectPersistedWorktreeIdsForSessionHydration(
   for (const worktreeId of Object.keys(session.browserTabsByWorktree ?? {})) {
     persistedWorktreeIds.add(worktreeId)
   }
+  // Why: a pane's home workspace may own no tabs, and an unloaded repo must not make it look deleted.
+  for (const layout of Object.values(session.terminalLayoutsByTabId)) {
+    for (const home of Object.values(layout.homeByLeafId ?? {})) {
+      persistedWorktreeIds.add(home.worktreeId)
+    }
+  }
   return persistedWorktreeIds
 }
 

@@ -1,3 +1,7 @@
+import {
+  buildTerminalPaneHomeIndex,
+  resolvePaneNavigationWorktreeId
+} from '@/lib/terminal-pane-home-index'
 import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
@@ -169,9 +173,17 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
         dismissStaleAgentRowByKey(paneKey)
         return
       }
+      // Why: a pane hosted in another workspace's tab rows here but is focused in its host tab.
+      const store = useAppStore.getState()
+      const navigationWorktreeId = resolvePaneNavigationWorktreeId(
+        buildTerminalPaneHomeIndex(store.tabsByWorktree, store.terminalLayoutsByTabId),
+        tabId,
+        parsed.leafId,
+        worktreeId
+      )
       // Why: design-doc rule — every user-initiated worktree switch must route through activateAndRevealWorktree (cross-repo activation + nav history).
-      activateAndRevealWorktree(worktreeId)
-      const tabs = useAppStore.getState().tabsByWorktree[worktreeId] ?? []
+      activateAndRevealWorktree(navigationWorktreeId)
+      const tabs = useAppStore.getState().tabsByWorktree[navigationWorktreeId] ?? []
       if (tabs.some((t) => t.id === tabId)) {
         activateTabAndFocusPane(tabId, parsed.leafId, {
           ackPaneKeyOnSuccess: paneKey,

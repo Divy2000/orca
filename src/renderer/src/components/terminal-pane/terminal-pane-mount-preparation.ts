@@ -238,7 +238,9 @@ export function prepareTerminalPaneMount(
     getManager: () => deps.managerRef.current,
     getContainer: () => deps.containerRef.current,
     getPtyIdForPane: (paneId) => paneTransports.get(paneId)?.getPtyId() ?? null,
-    getTabWideAgentHintLeafId: deps.getTabWideAgentHintLeafId
+    getTabWideAgentHintLeafId: deps.getTabWideAgentHintLeafId,
+    persistLayoutSnapshot: deps.persistLayoutSnapshot,
+    getPaneCwd: (paneId) => deps.paneCwdRef.current?.get(paneId)
   })
   const fileOpenLinkHint = getTerminalFileOpenHint()
   const getUrlOpenLinkHint = (paneId: number): string =>

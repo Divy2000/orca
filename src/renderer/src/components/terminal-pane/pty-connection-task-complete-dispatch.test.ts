@@ -319,7 +319,12 @@ describe('connectPanePty', () => {
 
     titleHandler('Codex - action required', 'Codex - action required')
 
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Codex - action required')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith(
+      'tab-1',
+      1,
+      'Codex - action required',
+      LEAF_1
+    )
     expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', 'Codex - action required')
   })
 
@@ -347,10 +352,10 @@ describe('connectPanePty', () => {
       throw new Error('Expected onTitleChange to be registered')
     }
     titleHandler('\u280b Pi', '\u280b Pi')
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, '\u280b OMP')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, '\u280b OMP', LEAF_1)
     expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', '\u280b OMP')
     titleHandler('π: tmp', 'π: tmp')
-    expect(deps.setRuntimePaneTitle).toHaveBeenLastCalledWith('tab-1', 1, 'OMP: tmp')
+    expect(deps.setRuntimePaneTitle).toHaveBeenLastCalledWith('tab-1', 1, 'OMP: tmp', LEAF_1)
     expect(deps.updateTabTitle).toHaveBeenLastCalledWith('tab-1', 'OMP: tmp')
 
     const statusHandler = createdTransportOptions[0]?.onAgentStatus as
@@ -431,7 +436,7 @@ describe('connectPanePty', () => {
 
     expect(manager.setPaneGpuRendering).toHaveBeenCalledTimes(1)
     expect(manager.setPaneGpuRendering).toHaveBeenCalledWith(1, true)
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, '\u280b OMP')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, '\u280b OMP', LEAF_1)
     expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', '\u280b OMP')
   })
 

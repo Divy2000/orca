@@ -41,9 +41,7 @@ import { buildWorktreeManualOrderCatalog } from './worktree-manual-order-catalog
 type WorktreeListProps = {
   scrollOffsetRef: React.MutableRefObject<number>
   scrollAnchorRef: React.MutableRefObject<VirtualizedScrollAnchor>
-  workspaceBoardOpen?: boolean
   onWorktreeCardClick?: () => void
-  onWorkspaceBoardDragPreviewStart?: () => void
   onWorkspaceBoardDragPreviewCommit?: () => void
   onWorkspaceBoardDragPreviewCancel?: () => void
 }
@@ -51,9 +49,7 @@ type WorktreeListProps = {
 const WorktreeList = React.memo(function WorktreeList({
   scrollOffsetRef,
   scrollAnchorRef,
-  workspaceBoardOpen = false,
   onWorktreeCardClick,
-  onWorkspaceBoardDragPreviewStart = NOOP_WORKSPACE_BOARD_DRAG_PREVIEW_CALLBACK,
   onWorkspaceBoardDragPreviewCommit = NOOP_WORKSPACE_BOARD_DRAG_PREVIEW_CALLBACK,
   onWorkspaceBoardDragPreviewCancel = NOOP_WORKSPACE_BOARD_DRAG_PREVIEW_CALLBACK
 }: WorktreeListProps) {
@@ -348,9 +344,7 @@ const WorktreeList = React.memo(function WorktreeList({
         onPinWorktree={statusMutations.pinWorktree}
         onPinWorktrees={statusMutations.pinWorktrees}
         onDropWorktreesOnWorkspaceBoard={statusMutations.dropWorktreesOnWorkspaceBoard}
-        workspaceBoardOpen={workspaceBoardOpen}
         onWorktreeCardClick={onWorktreeCardClick}
-        onWorkspaceBoardDragPreviewStart={onWorkspaceBoardDragPreviewStart}
         onWorkspaceBoardDragPreviewCommit={onWorkspaceBoardDragPreviewCommit}
         onWorkspaceBoardDragPreviewCancel={onWorkspaceBoardDragPreviewCancel}
         shouldShowWorkspaceBoardDropIndicator={

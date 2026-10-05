@@ -4,11 +4,25 @@ import type { PtyTransport } from './pty-transport'
 import type { PaneCwdMap } from './resolve-split-cwd'
 import { splitTerminalPaneWithInheritedCwd } from './terminal-pane-split-with-inherited-cwd'
 import { createDeferred } from './pty-connection-test-async'
+import type {
+  TerminalLayoutSnapshot,
+  TerminalLeafHome
+} from '../../../../shared/terminal-tab-types'
+import { isTerminalLeafId, type TerminalLeafId } from '../../../../shared/stable-pane-id'
 
-const mocks = vi.hoisted(() => ({
-  recordCreatedTerminalPaneSplit: vi.fn(),
-  resolveSplitCwd: vi.fn(),
-  splitWebRuntimeTerminal: vi.fn()
+const mocks = vi.hoisted(() => {
+  const terminalLayoutsByTabId: Record<string, TerminalLayoutSnapshot> = {}
+  const worktreesByRepo: Record<string, { id: string; path: string }[]> = {}
+  return {
+    recordCreatedTerminalPaneSplit: vi.fn(),
+    resolveSplitCwd: vi.fn(),
+    splitWebRuntimeTerminal: vi.fn(),
+    storeState: { terminalLayoutsByTabId, worktreesByRepo, setTabLayout: vi.fn() }
+  }
+})
+
+vi.mock('@/store', () => ({
+  useAppStore: { getState: () => mocks.storeState }
 }))
 
 vi.mock('@/runtime/web-runtime-session', () => ({
@@ -27,12 +41,22 @@ function makeManager(splitPane: ReturnType<typeof vi.fn>): PaneManager {
   return { splitPane } as unknown as PaneManager
 }
 
+function terminalLeafId(value: string): TerminalLeafId {
+  if (!isTerminalLeafId(value)) {
+    throw new Error(`Expected a terminal leaf UUID, got ${value}`)
+  }
+  return value
+}
+
 describe('splitTerminalPaneWithInheritedCwd', () => {
   beforeEach(() => {
     mocks.recordCreatedTerminalPaneSplit.mockReset()
     mocks.resolveSplitCwd.mockReset()
     mocks.splitWebRuntimeTerminal.mockReset()
     mocks.splitWebRuntimeTerminal.mockReturnValue(false)
+    mocks.storeState.terminalLayoutsByTabId = {}
+    mocks.storeState.worktreesByRepo = {}
+    mocks.storeState.setTabLayout.mockReset()
   })
 
   it.each(['keyboard', 'context_menu'] as const)(
@@ -208,5 +232,113 @@ describe('splitTerminalPaneWithInheritedCwd', () => {
     expect(staleSplitPane).not.toHaveBeenCalled()
     expect(mocks.resolveSplitCwd).not.toHaveBeenCalled()
     expect(mocks.recordCreatedTerminalPaneSplit).not.toHaveBeenCalled()
+  })
+
+  describe('given a source pane hosted for another workspace', () => {
+    const SOURCE_LEAF = '22222222-2222-4222-8222-222222222222'
+    const home: TerminalLeafHome = {
+      worktreeId: 'home-worktree',
+      sessionTabId: 'home-tab',
+      sessionLeafId: SOURCE_LEAF
+    }
+
+    beforeEach(() => {
+      mocks.storeState.worktreesByRepo = {
+        repo: [
+          { id: 'worktree-1', path: '/host' },
+          { id: 'home-worktree', path: '/home-worktree' }
+        ]
+      }
+      mocks.storeState.terminalLayoutsByTabId = {
+        'tab-1': {
+          root: { type: 'leaf', leafId: SOURCE_LEAF },
+          activeLeafId: SOURCE_LEAF,
+          expandedLeafId: null,
+          homeByLeafId: { [SOURCE_LEAF]: home }
+        }
+      }
+      mocks.storeState.setTabLayout.mockImplementation(
+        (tabId: string, layout: TerminalLayoutSnapshot) => {
+          mocks.storeState.terminalLayoutsByTabId[tabId] = layout
+        }
+      )
+    })
+
+    function splitForeign(splitPane: ReturnType<typeof vi.fn>): void {
+      splitTerminalPaneWithInheritedCwd({
+        worktreeId: 'worktree-1',
+        tabId: 'tab-1',
+        manager: makeManager(splitPane),
+        paneTransports: new Map([[1, { getPtyId: () => 'pty-1' } as PtyTransport]]),
+        paneCwdMap: new Map(),
+        fallbackCwd: '/host',
+        pane: { id: 1, leafId: terminalLeafId(SOURCE_LEAF) },
+        direction: 'vertical',
+        source: 'keyboard'
+      })
+    }
+
+    it('when it splits from a confirmed cwd then the new pane still inherits the home', () => {
+      const splitPane = vi.fn(
+        (_paneId: number, _direction: string, _opts?: { cwd?: string; leafId?: string }) => ({
+          id: 2
+        })
+      )
+
+      splitTerminalPaneWithInheritedCwd({
+        worktreeId: 'worktree-1',
+        tabId: 'tab-1',
+        manager: makeManager(splitPane),
+        paneTransports: new Map(),
+        paneCwdMap: new Map([[1, { cwd: '/home-worktree/src', confirmed: true }]]),
+        fallbackCwd: '/host',
+        pane: { id: 1, leafId: terminalLeafId(SOURCE_LEAF) },
+        direction: 'horizontal',
+        source: 'context_menu'
+      })
+
+      const opts = splitPane.mock.calls[0]?.[2]
+      expect(opts?.cwd).toBe('/home-worktree/src')
+      expect(
+        mocks.storeState.terminalLayoutsByTabId['tab-1']?.homeByLeafId?.[opts?.leafId ?? '']
+          ?.worktreeId
+      ).toBe('home-worktree')
+    })
+
+    it('when the split fails then the pre-written home is rolled back', () => {
+      mocks.resolveSplitCwd.mockReturnValue(Promise.resolve('/home-worktree'))
+
+      splitForeign(vi.fn(() => null))
+
+      expect(
+        Object.keys(mocks.storeState.terminalLayoutsByTabId['tab-1']?.homeByLeafId ?? {})
+      ).toEqual([SOURCE_LEAF])
+    })
+
+    it('when it splits then the cwd fallback is the home worktree path', () => {
+      mocks.resolveSplitCwd.mockReturnValue(Promise.resolve('/home-worktree'))
+
+      splitForeign(vi.fn(() => ({ id: 2 })))
+
+      expect(mocks.resolveSplitCwd).toHaveBeenCalledWith(
+        expect.objectContaining({ fallbackCwd: '/home-worktree' })
+      )
+    })
+
+    it('when it splits then the new pane inherits the home before it is created', () => {
+      mocks.resolveSplitCwd.mockReturnValue(Promise.resolve('/home-worktree'))
+      let homeSeenAtCreation: TerminalLeafHome | undefined
+      const splitPane = vi.fn((_paneId: number, _direction: string, opts?: { leafId?: string }) => {
+        homeSeenAtCreation =
+          mocks.storeState.terminalLayoutsByTabId['tab-1']?.homeByLeafId?.[opts?.leafId ?? '']
+        return { id: 2, leafId: opts?.leafId }
+      })
+
+      splitForeign(splitPane)
+
+      const newLeafId = splitPane.mock.calls[0]?.[2]?.leafId
+      expect(newLeafId).toMatch(/^[0-9a-f-]{36}$/)
+      expect(homeSeenAtCreation).toEqual({ ...home, sessionLeafId: newLeafId })
+    })
   })
 })

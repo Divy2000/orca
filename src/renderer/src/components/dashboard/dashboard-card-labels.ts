@@ -32,7 +32,8 @@ export function rowConversationName(
   row: DashboardAgentRow,
   generatedTitlesEnabled: boolean,
   layout: TerminalLayoutSnapshot | undefined,
-  paneTitles: Record<number, string> | undefined
+  paneTitles: Record<number, string> | undefined,
+  paneTitleLeafIds?: Record<number, string>
 ): string | undefined {
   const parentPaneKey = row.entry.orchestration?.parentPaneKey
   // Why: a child row rendered on its parent's tab does not own that tab's name.
@@ -46,7 +47,8 @@ export function rowConversationName(
   const paneLiveTitle = resolveAgentRowPaneLiveTitle(
     layout,
     paneTitles,
-    parsePaneKey(row.paneKey)?.leafId
+    parsePaneKey(row.paneKey)?.leafId,
+    paneTitleLeafIds
   )
   return (
     getAgentRowConversationName(

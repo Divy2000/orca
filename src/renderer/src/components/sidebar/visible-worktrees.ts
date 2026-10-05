@@ -1,5 +1,5 @@
 import type { Repo } from '../../../../shared/repo-types'
-import type { TerminalTab } from '../../../../shared/terminal-tab-types'
+import type { TerminalLayoutSnapshot, TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { WorktreeLineage } from '../../../../shared/worktree/lineage-types'
 export type { SidebarFilterState } from './visible-worktree-kinds'
 export {
@@ -72,6 +72,7 @@ export type VisibleWorktreeOptions = {
   browserTabsByWorktree?: Record<string, { id: string }[]> | null
   worktreeIdsWithLiveAgent: ReadonlySet<string>
   worktreeIdsWithStructuredChat?: ReadonlySet<string>
+  terminalLayoutsByTabId?: Record<string, TerminalLayoutSnapshot> | null
   hideDefaultBranchWorkspace: boolean
   hideAutomationGeneratedWorkspaces: boolean
   hideCliCreatedWorkspaces: boolean
@@ -157,7 +158,8 @@ export function computeVisibleWorktrees(
           opts.ptyIdsByTabId,
           opts.browserTabsByWorktree,
           opts.worktreeIdsWithLiveAgent,
-          opts.worktreeIdsWithStructuredChat
+          opts.worktreeIdsWithStructuredChat,
+          opts.terminalLayoutsByTabId
         )
     )
   }
@@ -284,7 +286,8 @@ export function getVisibleWorktreeIds(): string[] {
       state.runtimePaneTitlesByTabId,
       state.ptyIdsByTabId,
       state.migrationUnsupportedByPtyId,
-      state.terminalLayoutsByTabId
+      state.terminalLayoutsByTabId,
+      state.runtimePaneTitleLeafIdsByTabId
     ).map((w) => w.id)
   } else {
     // Why empty map: non-smart branches don't read attentionByWorktree, but

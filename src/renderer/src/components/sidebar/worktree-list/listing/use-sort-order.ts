@@ -146,7 +146,8 @@ export function useSidebarWorktreeSortOrder(args: {
             state.ptyIdsByTabId,
             now,
             state.migrationUnsupportedByPtyId,
-            state.terminalLayoutsByTabId
+            state.terminalLayoutsByTabId,
+            state.runtimePaneTitleLeafIdsByTabId
           )
         : new Map<string, WorktreeAttention>()
     nonArchivedWorktrees.sort(

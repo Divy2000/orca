@@ -19,6 +19,11 @@ const mocks = vi.hoisted(() => ({
   }
 }))
 
+const worktreeListProbe = vi.hoisted(() => {
+  const props: Record<string, unknown> = {}
+  return { props }
+})
+
 vi.mock('@/store', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) => selector(mocks.state)
 }))
@@ -55,7 +60,10 @@ vi.mock('./SetupScriptPromptCard', () => ({
 }))
 
 vi.mock('./WorktreeList', () => ({
-  default: () => <div data-testid="worktree-list" />
+  default: (props: Record<string, unknown>) => {
+    worktreeListProbe.props = props
+    return <div data-testid="worktree-list" />
+  }
 }))
 
 vi.mock('./SidebarToolbar', () => ({
@@ -101,6 +109,7 @@ vi.mock('./useWorkspaceBoardPanel', () => ({
 }))
 
 import Sidebar from './index'
+import { TERMINAL_PANE_HOME_DROP_TARGET_ATTRIBUTE } from '../terminal-pane/terminal-pane-home-drop-target'
 
 function setSidebarState(settings: GlobalSettings, statusBarVisible = true): void {
   mocks.state = {
@@ -227,6 +236,24 @@ describe('Sidebar', () => {
     }
 
     expect(fetchAllWorktrees).not.toHaveBeenCalled()
+  })
+
+  it('given an open sidebar, it marks itself as where a foreign pane is dropped to go home', () => {
+    setSidebarState(getDefaultSettings(tmpdir()))
+
+    const view = render(sidebarElement())
+
+    expect(
+      view.container.querySelector(`[${TERMINAL_PANE_HOME_DROP_TARGET_ATTRIBUTE}]`)
+    ).not.toBeNull()
+  })
+
+  it('given a closed workspace board, starting a card drag does not open or preview the board', () => {
+    setSidebarState(getDefaultSettings(tmpdir()))
+
+    render(sidebarElement())
+
+    expect(worktreeListProbe.props.onWorkspaceBoardDragPreviewStart).toBeUndefined()
   })
 
   it('closes the dashboard drawer when the dashboard experiment is disabled', async () => {

@@ -7,6 +7,7 @@ import { mergeCapturedLeafState } from './merge-captured-leaf-state'
 import { resolveTerminalLayoutActiveLeafId } from './terminal-layout-leaf-ids'
 import { TERMINAL_SCROLLBACK_SESSION_BUFFER_BYTE_LIMIT } from '../../../../shared/terminal-scrollback-limits'
 import { serializeWithAbsoluteCursor } from '../../../../shared/terminal-serialize-absolute-cursor'
+import { carryTerminalLeafHomes } from '../../../../shared/terminal-pane-home'
 import { getUtf8ByteLength, isUtf8ByteLengthWithinLimit } from '../../../../shared/utf8-byte-limits'
 
 const MAX_BUFFER_BYTES = TERMINAL_SCROLLBACK_SESSION_BUFFER_BYTE_LIMIT
@@ -199,6 +200,11 @@ export function captureTerminalShutdownLayout({
     .map((p) => [p.leafId, paneTitlesByPaneId[p.id]] as const)
   if (titleEntries.length > 0) {
     layout.titlesByLeafId = Object.fromEntries(titleEntries)
+  }
+
+  const homeByLeafId = carryTerminalLeafHomes(existingLayout?.homeByLeafId, currentLeafIds)
+  if (homeByLeafId) {
+    layout.homeByLeafId = homeByLeafId
   }
 
   return layout

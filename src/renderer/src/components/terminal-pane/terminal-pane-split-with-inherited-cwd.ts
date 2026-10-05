@@ -4,6 +4,9 @@ import { splitWebRuntimeTerminal } from '@/runtime/web-runtime-session'
 import type { PtyTransport } from './pty-transport'
 import { resolveSplitCwd, type PaneCwdMap } from './resolve-split-cwd'
 import { recordCreatedTerminalPaneSplit } from './terminal-pane-split-completion'
+import { useAppStore } from '@/store'
+import { getWorktreeMapFromState } from '@/store/selectors'
+import { installSplitPaneHome, splitWithInstalledPaneHome } from './terminal-pane-split-home'
 
 export function splitTerminalPaneWithInheritedCwd(args: {
   worktreeId: string
@@ -13,7 +16,7 @@ export function splitTerminalPaneWithInheritedCwd(args: {
   paneTransports: Map<number, PtyTransport>
   paneCwdMap: PaneCwdMap
   fallbackCwd: string
-  pane: ManagedPane
+  pane: Pick<ManagedPane, 'id' | 'leafId'>
   direction: 'vertical' | 'horizontal'
   source: TerminalPaneSplitSource
 }): void {
@@ -31,9 +34,17 @@ export function splitTerminalPaneWithInheritedCwd(args: {
   if (!manager) {
     return
   }
+  const inheritedHome = installSplitPaneHome({
+    tabId: args.tabId,
+    tabWorktreeId: args.worktreeId,
+    sourceLeafId: args.pane.leafId
+  })
+  const leafHint = inheritedHome ? { leafId: inheritedHome.leafId } : {}
   const cached = args.paneCwdMap.get(args.pane.id)
   if (cached?.confirmed && cached.cwd) {
-    const createdPane = manager.splitPane(args.pane.id, args.direction, { cwd: cached.cwd })
+    const createdPane = splitWithInstalledPaneHome(inheritedHome, () =>
+      manager.splitPane(args.pane.id, args.direction, { cwd: cached.cwd, ...leafHint })
+    )
     recordCreatedTerminalPaneSplit(createdPane, {
       source: args.source,
       direction: args.direction
@@ -47,9 +58,14 @@ export function splitTerminalPaneWithInheritedCwd(args: {
       paneCwdMap: args.paneCwdMap,
       sourcePaneId: paneId,
       sourcePtyId: ptyId,
-      fallbackCwd: args.fallbackCwd
+      fallbackCwd: inheritedHome
+        ? (getWorktreeMapFromState(useAppStore.getState()).get(inheritedHome.home.worktreeId)
+            ?.path ?? args.fallbackCwd)
+        : args.fallbackCwd
     })
-  const createdPane = manager.splitPane(paneId, args.direction, { cwdPromise })
+  const createdPane = splitWithInstalledPaneHome(inheritedHome, () =>
+    manager.splitPane(paneId, args.direction, { cwdPromise, ...leafHint })
+  )
   recordCreatedTerminalPaneSplit(createdPane, {
     source: args.source,
     direction: args.direction

@@ -10,6 +10,7 @@ import {
 const BASE: PaletteStatusInputsState = {
   agentStatusByPaneKey: {},
   runtimePaneTitlesByTabId: {},
+  runtimePaneTitleLeafIdsByTabId: {},
   ptyIdsByTabId: {},
   terminalLayoutsByTabId: {},
   tabsByWorktree: {},

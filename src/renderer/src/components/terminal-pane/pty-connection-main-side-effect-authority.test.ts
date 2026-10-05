@@ -233,7 +233,7 @@ describe('connectPanePty', () => {
         ]
       })
 
-      expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Codex working')
+      expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Codex working', LEAF_1)
       expect(deps.markWorktreeUnread).toHaveBeenCalledTimes(1)
       expect(deps.markTerminalTabUnread).toHaveBeenCalledWith('tab-1', 'terminal-bell')
       expect(deps.dispatchNotification).not.toHaveBeenCalled()
@@ -346,7 +346,7 @@ describe('connectPanePty', () => {
       })
 
       // The cleared title still lands; the cache timer is cleared.
-      expect(deps.setRuntimePaneTitle).toHaveBeenLastCalledWith('tab-1', 1, 'Codex')
+      expect(deps.setRuntimePaneTitle).toHaveBeenLastCalledWith('tab-1', 1, 'Codex', LEAF_1)
       expect(deps.setCacheTimerStartedAt).toHaveBeenLastCalledWith(
         makePaneKey('tab-1', LEAF_1),
         null

@@ -3419,6 +3419,20 @@
           },
           "TerminalRestoringPlaceholder": {
             "restoring": "Restoring terminal…"
+          },
+          "terminalPaneHome": {
+            "backTo": "Back to {{value0}}",
+            "from": "From {{value0}}",
+            "notReady": "This terminal is still starting. Try again in a moment.",
+            "itsWorkspace": "its workspace"
+          },
+          "terminalPaneMove": {
+            "paneMissing": "This terminal is no longer open.",
+            "sameTab": "This terminal is already in that tab.",
+            "differentHost": "Terminals can only join a split on the same host.",
+            "remoteHost": "Terminals in remote workspaces can't move between tabs.",
+            "remoteTerminal": "Remote terminals can't move between tabs.",
+            "nativeChat": "Terminals shown as chat can't move between tabs."
           }
         }
       },

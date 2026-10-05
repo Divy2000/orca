@@ -66,3 +66,13 @@ describe('resolveAgentRowPaneLiveTitle', () => {
     expect(resolveAgentRowPaneLiveTitle(nested, titles, LEAF_C)).toBe('third')
   })
 })
+
+describe('resolveAgentRowPaneLiveTitle with recorded title leaves', () => {
+  it('given a title recorded for the second leaf then that leaf owns it, not replay order', () => {
+    const titles = { 1: '✳ Redis cache' }
+    const bindings = { 1: LEAF_B }
+
+    expect(resolveAgentRowPaneLiveTitle(SPLIT, titles, LEAF_B, bindings)).toBe('✳ Redis cache')
+    expect(resolveAgentRowPaneLiveTitle(SPLIT, titles, LEAF_A, bindings)).toBeNull()
+  })
+})

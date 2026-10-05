@@ -11,6 +11,7 @@ import {
 } from '../slices/terminal-tab-owner-index'
 import { getTabIdFromPaneKey } from './terminal-pty-identities'
 import type { TerminalSlice, TerminalStoreGet, TerminalStoreSet } from './terminal-state'
+import { withRuntimePaneTitleLeafBinding } from './runtime-pane-title-leaf-bindings'
 
 export function createTerminalTabPresentationActions(
   set: TerminalStoreSet,
@@ -142,19 +143,28 @@ export function createTerminalTabPresentationActions(
         return { tabsByWorktree: { ...s.tabsByWorktree, [ownerWorktreeId]: nextTabs } }
       })
     },
-    setRuntimePaneTitle: (tabId, paneId, title) => {
+    setRuntimePaneTitle: (tabId, paneId, title, leafId) => {
       set((s) => {
         const currentByPane = s.runtimePaneTitlesByTabId[tabId] ?? {}
         const prevTitle = currentByPane[paneId]
-        if (prevTitle === title) {
-          return s
-        }
-        if (prevTitle && isDecorativeAgentTitleFrameChange(prevTitle, title)) {
-          return s
-        }
-        // Why: re-sort hookless title changes only when their activity classification changes.
+        const bindings = withRuntimePaneTitleLeafBinding(
+          s.runtimePaneTitleLeafIdsByTabId,
+          tabId,
+          paneId,
+          leafId
+        )
+        const bindingChanged = bindings !== s.runtimePaneTitleLeafIdsByTabId
+        // Why: a classified title moving to another leaf can move to another workspace's
+        // attention (a hosted pane's home), so it re-sorts like a classification change.
         const classificationChanged =
-          classifyTitleActivity(prevTitle ?? '') !== classifyTitleActivity(title)
+          classifyTitleActivity(prevTitle ?? '') !== classifyTitleActivity(title) ||
+          (bindingChanged && classifyTitleActivity(title) !== null)
+        const titleUnchanged =
+          prevTitle === title ||
+          (prevTitle !== undefined && isDecorativeAgentTitleFrameChange(prevTitle, title))
+        if (titleUnchanged && !bindingChanged) {
+          return s
+        }
         // Why: skip active-worktree remount side effects and orphaned panes.
         const ownerWorktreeId = classificationChanged
           ? getTerminalTabOwnerWorktreeId(s.tabsByWorktree, tabId)
@@ -162,10 +172,15 @@ export function createTerminalTabPresentationActions(
         const isActive = ownerWorktreeId !== null && ownerWorktreeId === s.activeWorktreeId
         const shouldBump = classificationChanged && ownerWorktreeId !== null && !isActive
         return {
-          runtimePaneTitlesByTabId: {
-            ...s.runtimePaneTitlesByTabId,
-            [tabId]: { ...currentByPane, [paneId]: title }
-          },
+          ...(titleUnchanged
+            ? {}
+            : {
+                runtimePaneTitlesByTabId: {
+                  ...s.runtimePaneTitlesByTabId,
+                  [tabId]: { ...currentByPane, [paneId]: title }
+                }
+              }),
+          ...(bindingChanged ? { runtimePaneTitleLeafIdsByTabId: bindings } : {}),
           ...(shouldBump ? { sortEpoch: s.sortEpoch + 1 } : {})
         }
       })
@@ -193,8 +208,17 @@ export function createTerminalTabPresentationActions(
           : null
         const isActive = ownerWorktreeId !== null && ownerWorktreeId === s.activeWorktreeId
         const shouldBump = hadClassification && ownerWorktreeId !== null && !isActive
+        const bindings = withRuntimePaneTitleLeafBinding(
+          s.runtimePaneTitleLeafIdsByTabId,
+          tabId,
+          paneId,
+          undefined
+        )
         return {
           runtimePaneTitlesByTabId: next,
+          ...(bindings !== s.runtimePaneTitleLeafIdsByTabId
+            ? { runtimePaneTitleLeafIdsByTabId: bindings }
+            : {}),
           ...(shouldBump ? { sortEpoch: s.sortEpoch + 1 } : {})
         }
       })

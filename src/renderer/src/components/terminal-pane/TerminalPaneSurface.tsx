@@ -23,6 +23,8 @@ import {
   TerminalPaneSshReconnectPortals
 } from './TerminalPaneRuntimePortals'
 import type { TerminalPaneController } from './use-terminal-pane-controller'
+import { requestTerminalPaneSendHome } from './terminal-pane-send-home-action'
+import { useTerminalSessionDrop } from './use-terminal-session-drop'
 
 export function TerminalPaneSurface({
   controller
@@ -110,8 +112,12 @@ export function TerminalPaneSurface({
     titleUsesLightSurface,
     visibleQuickCommandHosts,
     visibleTerminalError,
-    worktreeId
+    worktreeId,
+    paneHomeLabels
   } = controller
+  const sessionDrop = useTerminalSessionDrop()
+  const menuLeafId =
+    contextMenu.menuPaneId !== null ? managerRef.current?.getLeafId(contextMenu.menuPaneId) : null
 
   return (
     <>
@@ -128,6 +134,9 @@ export function TerminalPaneSurface({
         onMouseDownCapture={handlePrimarySelectionMiddleMouseDown}
         onAuxClickCapture={handlePrimarySelectionAuxClick}
         onDragOver={(event) => {
+          if (sessionDrop.onDragOver(event)) {
+            return
+          }
           if (
             event.dataTransfer.types.includes(WORKSPACE_FILE_PATH_MIME) ||
             event.dataTransfer.types.includes(WORKSPACE_FILE_PATHS_MIME)
@@ -136,6 +145,7 @@ export function TerminalPaneSurface({
             event.dataTransfer.dropEffect = 'copy'
           }
         }}
+        onDragLeave={sessionDrop.onDragLeave}
         onDrop={(event) => {
           if (
             !event.dataTransfer.types.includes(WORKSPACE_FILE_PATH_MIME) &&
@@ -269,6 +279,8 @@ export function TerminalPaneSurface({
         onCopyPaneId={contextMenu.onCopyPaneId}
         canCopyAgentSessionId={menuAgentSessionId !== null}
         onCopyAgentSessionId={() => void contextMenu.onCopyAgentSessionId()}
+        backHomeLabel={menuLeafId ? (paneHomeLabels[menuLeafId] ?? null) : null}
+        onSendPaneHome={() => requestTerminalPaneSendHome(tabId, menuLeafId)}
       />
       <LinkActionPopover request={terminalLinkActionRequest} onClose={closeTerminalLinkActions} />
       {quickCommandEditorOpen ? (
@@ -338,6 +350,8 @@ export function TerminalPaneSurface({
         onRenameSubmit={handleRenameSubmit}
         onRenameCancel={handleRenameCancel}
         onRenameBlur={handleRenameBlur}
+        paneHomeLabels={paneHomeLabels}
+        onSendPaneHome={(pane) => requestTerminalPaneSendHome(tabId, pane.leafId)}
       />
       <TerminalPaneRecoveryPortals controller={controller} />
       <TerminalPaneMobileDriverPortals controller={controller} />

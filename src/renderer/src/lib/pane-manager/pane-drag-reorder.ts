@@ -8,6 +8,7 @@ import type {
   PaneStyleOptions
 } from './pane-manager-types'
 import { detachPaneFromTree, findPaneChildren, insertPaneNextTo } from './pane-tree-ops'
+import { hideDropOverlayRect } from './pane-drop-zone'
 
 // ---------------------------------------------------------------------------
 // Drag-to-reorder panes
@@ -143,7 +144,7 @@ export function showDropOverlay(state: DragReorderState): void {
     document.body.appendChild(overlay)
     state.dropOverlay = overlay
   }
-  state.dropOverlay.style.display = 'none'
+  hideDropOverlayRect(state.dropOverlay)
 }
 
 export function hideDropOverlay(state: DragReorderState): void {

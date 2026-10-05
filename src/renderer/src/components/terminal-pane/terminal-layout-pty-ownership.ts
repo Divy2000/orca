@@ -26,10 +26,10 @@ function resolveRetainedLeafId(
   return retainedLeafId
 }
 
-function coalesceLeafRecord(
-  source: Record<string, string> | undefined,
+function coalesceLeafRecord<T>(
+  source: Record<string, T> | undefined,
   retainedLeafIdByRemovedLeafId: ReadonlyMap<string, string>
-): Record<string, string> | undefined {
+): Record<string, T> | undefined {
   if (!source) {
     return undefined
   }
@@ -215,11 +215,13 @@ export function normalizeTerminalLayoutPtyOwnership(
     orderedLeafIds
   )
   const titlesByLeafId = coalesceLeafRecord(snapshot.titlesByLeafId, retainedLeafIdByRemovedLeafId)
+  const homeByLeafId = coalesceLeafRecord(snapshot.homeByLeafId, retainedLeafIdByRemovedLeafId)
   const {
     ptyIdsByLeafId: _oldPtyIdsByLeafId,
     buffersByLeafId: _oldBuffersByLeafId,
     scrollbackRefsByLeafId: _oldScrollbackRefsByLeafId,
     titlesByLeafId: _oldTitlesByLeafId,
+    homeByLeafId: _oldHomeByLeafId,
     chatLeafId: _oldChatLeafId,
     ...snapshotWithoutLeafRecords
   } = snapshot
@@ -241,7 +243,8 @@ export function normalizeTerminalLayoutPtyOwnership(
       ...(ptyIdsByLeafId ? { ptyIdsByLeafId } : {}),
       ...(buffersByLeafId ? { buffersByLeafId } : {}),
       ...(scrollbackRefsByLeafId ? { scrollbackRefsByLeafId } : {}),
-      ...(titlesByLeafId ? { titlesByLeafId } : {})
+      ...(titlesByLeafId ? { titlesByLeafId } : {}),
+      ...(homeByLeafId ? { homeByLeafId } : {})
     },
     changed: true
   }

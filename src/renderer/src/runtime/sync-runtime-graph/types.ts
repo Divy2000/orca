@@ -3,6 +3,7 @@ import type { AppState } from '@/store/types'
 import type { RuntimeMobileTerminalTheme } from '../../../../shared/runtime-types'
 import type { TabGroupLayoutNode } from '../../../../shared/tab-types'
 import type { TerminalPaneLayoutNode } from '../../../../shared/terminal-tab-types'
+import type { PaneCwdEntry } from '@/components/terminal-pane/resolve-split-cwd'
 
 export type RuntimeMobileSessionSyncKey = {
   // Reference changes signal layout/title updates without stringifying thousands of tabs.
@@ -39,6 +40,10 @@ export type RegisteredTerminalTab = {
   getContainer: () => HTMLDivElement | null
   getPtyIdForPane: (paneId: number) => string | null
   getTabWideAgentHintLeafId: () => string | null
+  /** Writes the mounted layout to the store; pane moves read the store right after. */
+  persistLayoutSnapshot?: () => void
+  /** The pane's last known cwd state, whose pending split cwd blocks moving it. */
+  getPaneCwd?: (paneId: number) => PaneCwdEntry | undefined
 }
 
 export type OpenFileByWorktreeAndId = Map<string, Map<string, AppState['openFiles'][number]>>

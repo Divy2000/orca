@@ -27,6 +27,11 @@ import {
 import { EMPTY_WORKTREE_AGENT_ORCHESTRATION } from './worktree-agent-orchestration-index'
 import { EMPTY_TABS } from './WorktreeCardHelpers'
 import {
+  EMPTY_HOSTED_AGENT_ROW_INPUTS,
+  mergeHostedAgentRowInputs,
+  selectHostedAgentRowInputs
+} from './worktree-hosted-pane-agent-row-inputs'
+import {
   createWorktreeAgentFreshnessSelector,
   EMPTY_WORKTREE_AGENT_FRESHNESS_SIGNATURE
 } from './worktree-agent-freshness-selector'
@@ -108,6 +113,9 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
       active ? selectPaneForegroundAgentsForWorktree(s, worktreeId) : EMPTY_PANE_FOREGROUND_AGENTS
     )
   )
+  const hostedAgentRowInputs = useAppStore((s) =>
+    active ? selectHostedAgentRowInputs(s, worktreeId) : EMPTY_HOSTED_AGENT_ROW_INPUTS
+  )
   const agentFreshnessSignature = useAppStore((s) =>
     active ? selectAgentFreshness(s) : EMPTY_WORKTREE_AGENT_FRESHNESS_SIGNATURE
   )
@@ -129,14 +137,23 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
             })
           ]
         : liveEntries
-    return applyAgentRowLineage(
-      buildWorktreeAgentRows({
+    // Why: a pane hosted in another workspace's tab rows under its home with the host's terminal.
+    const terminalInputs = mergeHostedAgentRowInputs(
+      {
         tabs: tabs ?? EMPTY_TABS,
-        entries,
-        retained,
         runtimePaneTitlesByTabId,
         ptyIdsByTabId,
-        terminalLayoutsByTabId,
+        terminalLayoutsByTabId
+      },
+      worktreeId,
+      hostedAgentRowInputs
+    )
+    return applyAgentRowLineage(
+      buildWorktreeAgentRows({
+        ...terminalInputs,
+        runtimePaneTitleLeafIdsByTabId: hostedAgentRowInputs.runtimePaneTitleLeafIdsByTabId,
+        entries,
+        retained,
         runtimeAgentOrchestrationByPaneKey,
         paneForegroundAgentByPaneKey,
         now
@@ -152,6 +169,7 @@ export function useWorktreeAgentRows(worktreeId: string, active = true): Dashboa
     runtimePaneTitlesByTabId,
     ptyIdsByTabId,
     terminalLayoutsByTabId,
+    hostedAgentRowInputs,
     runtimeAgentOrchestrationByPaneKey,
     paneForegroundAgentByPaneKey,
     agentFreshnessSignature

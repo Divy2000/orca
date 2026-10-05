@@ -26,7 +26,9 @@ export function installTerminalKeydownFit(session: ConnectPanePtySession): void 
       // the early return for interrupt-intent inference.
       session.deps.clearTerminalTabUnread(session.deps.tabId)
       session.deps.clearTerminalPaneUnread(session.cacheKey)
-      session.deps.clearWorktreeUnread(session.deps.worktreeId)
+      session.deps.clearWorktreeUnread(
+        session.deps.attributionWorktreeId ?? session.deps.worktreeId
+      )
       return
     }
     if (isCtrlCKeyEvent(event)) {
@@ -66,7 +68,7 @@ export function installTerminalKeydownFit(session: ConnectPanePtySession): void 
     }
     session.deps.clearTerminalTabUnread(session.deps.tabId)
     session.deps.clearTerminalPaneUnread(session.cacheKey)
-    session.deps.clearWorktreeUnread(session.deps.worktreeId)
+    session.deps.clearWorktreeUnread(session.deps.attributionWorktreeId ?? session.deps.worktreeId)
   }
   // Why: infer only from focused xterm key events. Raw PTY bytes cannot
   // distinguish plain Escape from Alt/meta sequences, and programmatic writes

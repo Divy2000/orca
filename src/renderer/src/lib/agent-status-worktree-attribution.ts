@@ -24,7 +24,8 @@ export function parseAgentStatusPaneIdentity(
 export function resolveAgentStatusWorktreeId(
   entry: Pick<AgentStatusEntry, 'paneKey' | 'worktreeId' | 'orchestration' | 'connectionId'>,
   worktreeIdByTabId: ReadonlyMap<string, string>,
-  orchestration = entry.orchestration
+  orchestration = entry.orchestration,
+  homeWorktreeIdByPaneKey?: ReadonlyMap<string, string>
 ): string | null {
   const paneIdentity = parseAgentStatusPaneIdentity(entry.paneKey)
   // Host-reported workspace ownership survives colliding mirrored tab IDs.
@@ -33,6 +34,11 @@ export function resolveAgentStatusWorktreeId(
     (entry.connectionId || isWebTerminalSurfaceTabId(paneIdentity?.tabId ?? ''))
   ) {
     return entry.worktreeId
+  }
+  // Why: a local pane hosted in another workspace's tab reports to its home; the tab only hosts it.
+  const homeWorktreeId = homeWorktreeIdByPaneKey?.get(entry.paneKey)
+  if (homeWorktreeId) {
+    return homeWorktreeId
   }
   const parentIdentity = parseAgentStatusPaneIdentity(orchestration?.parentPaneKey)
   return (

@@ -8,6 +8,8 @@ import {
 } from '@/components/terminal-pane/terminal-layout-pty-ownership'
 import { transferDirectSshPaneDetachLedger } from '../slices/direct-ssh-terminal-authority-ledger'
 import type { TerminalSlice, TerminalStoreGet, TerminalStoreSet } from './terminal-state'
+import type { AppState } from '../types'
+import type { TerminalLayoutSnapshot } from '../../../../shared/terminal-tab-types'
 import {
   isCurrentDirectSshAuthority,
   resolvePrimaryLayoutPtyId,
@@ -15,6 +17,24 @@ import {
   withTerminalTabPtyId
 } from './terminal-pty-identities'
 import { transferNormalizedTerminalLayoutPtyOwnership } from './workspace-terminal-hydration-patch'
+
+/** A joined tab keeps its main PTY while that PTY still lives in the joined layout. */
+function resolveJoinedTargetPrimaryPtyId(
+  state: Pick<AppState, 'lastKnownRelayPtyIdByTabId' | 'tabsByWorktree'>,
+  targetTabId: string,
+  targetLayout: TerminalLayoutSnapshot
+): string | null {
+  const layoutPtyIds = new Set(Object.values(targetLayout.ptyIdsByLeafId ?? {}))
+  const currentPrimaryPtyId =
+    Object.values(state.tabsByWorktree)
+      .flat()
+      .find((tab) => tab.id === targetTabId)?.ptyId ??
+    state.lastKnownRelayPtyIdByTabId[targetTabId] ??
+    null
+  return currentPrimaryPtyId && layoutPtyIds.has(currentPrimaryPtyId)
+    ? currentPrimaryPtyId
+    : resolvePrimaryLayoutPtyId(targetLayout)
+}
 
 export function createTerminalLayoutActions(
   set: TerminalStoreSet,
@@ -147,7 +167,8 @@ export function createTerminalLayoutActions(
       detachedPtyId,
       sourceLayout,
       sourceTabId,
-      targetTabId
+      targetTabId,
+      targetLayout
     }) => {
       const sourcePaneKey = makePaneKey(sourceTabId, detachedLeafId)
       const targetPaneKey = makePaneKey(targetTabId, detachedLeafId)
@@ -176,8 +197,11 @@ export function createTerminalLayoutActions(
         } else {
           delete nextLastKnownRelayPtyIdByTabId[sourceTabId]
         }
-        if (detachedPtyId) {
-          nextLastKnownRelayPtyIdByTabId[targetTabId] = detachedPtyId
+        const targetPrimaryPtyId = targetLayout
+          ? resolveJoinedTargetPrimaryPtyId(s, targetTabId, targetLayout)
+          : detachedPtyId
+        if (targetPrimaryPtyId) {
+          nextLastKnownRelayPtyIdByTabId[targetTabId] = targetPrimaryPtyId
         }
         // Why: pane-to-tab detach moves a live PTY without spawning or exiting, so transfer identity without activity bumps.
         const sourceTabsByWorktree = withTerminalTabPtyId(
@@ -185,16 +209,19 @@ export function createTerminalLayoutActions(
           sourceTabId,
           sourcePrimaryPtyId
         )
-        const nextTabsByWorktree = detachedPtyId
-          ? withTerminalTabPtyId(sourceTabsByWorktree, targetTabId, detachedPtyId)
+        const nextTabsByWorktree = targetPrimaryPtyId
+          ? withTerminalTabPtyId(sourceTabsByWorktree, targetTabId, targetPrimaryPtyId)
           : sourceTabsByWorktree
-        const directSshLedger = transferDirectSshPaneDetachLedger(s, {
-          detachedPtyId,
-          sourcePtyId: sourcePrimaryPtyId,
-          sourceTabId,
-          targetTabId,
-          isAuthorityCurrent: (authority) => isCurrentDirectSshAuthority(s, authority)
-        })
+        // Why: joins are local-only (canMoveTerminalPane), and the ledger move would clear the target's own entries.
+        const directSshLedger = targetLayout
+          ? {}
+          : transferDirectSshPaneDetachLedger(s, {
+              detachedPtyId,
+              sourcePtyId: sourcePrimaryPtyId,
+              sourceTabId,
+              targetTabId,
+              isAuthorityCurrent: (authority) => isCurrentDirectSshAuthority(s, authority)
+            })
         return {
           ptyIdsByTabId: nextPtyIdsByTabId,
           lastKnownRelayPtyIdByTabId: nextLastKnownRelayPtyIdByTabId,

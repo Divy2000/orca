@@ -10,7 +10,7 @@ export type RunningAgentTargetState = Pick<
   AppState,
   'agentStatusByPaneKey' | 'tabsByWorktree' | 'terminalLayoutsByTabId' | 'ptyIdsByTabId'
 > &
-  Partial<Pick<AppState, 'runtimePaneTitlesByTabId'>>
+  Partial<Pick<AppState, 'runtimePaneTitlesByTabId' | 'runtimePaneTitleLeafIdsByTabId'>>
 
 export type RunningAgentSendTarget = {
   paneKey: string
@@ -110,7 +110,12 @@ function detectLiveAgentPaneStatus(
 ): ReturnType<typeof detectAgentSendTitleStatus> {
   const layout = state.terminalLayoutsByTabId[tabId]
   const paneTitles = state.runtimePaneTitlesByTabId?.[tabId]
-  const paneTitleResolution = resolveRuntimePaneTitleLeafResolution(layout, paneTitles, leafId)
+  const paneTitleResolution = resolveRuntimePaneTitleLeafResolution(
+    layout,
+    paneTitles,
+    leafId,
+    state.runtimePaneTitleLeafIdsByTabId?.[tabId]
+  )
   // Why: runtime pane titles are the freshest title signal for split panes; use
   // the tab title only before the runtime has reported a pane title for the leaf.
   const title = paneTitleResolution.title ?? (paneTitleResolution.hasAnyPaneTitle ? null : tabTitle)

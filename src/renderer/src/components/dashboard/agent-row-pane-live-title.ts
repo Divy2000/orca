@@ -17,7 +17,8 @@ import type { TerminalLayoutSnapshot } from '../../../../shared/terminal-tab-typ
 export function resolveAgentRowPaneLiveTitle(
   layout: TerminalLayoutSnapshot | undefined,
   paneTitles: Record<number, string> | undefined,
-  leafId: string | null | undefined
+  leafId: string | null | undefined,
+  paneTitleLeafIds?: Record<number, string>
 ): string | null | undefined {
   if (layout?.root?.type !== 'split') {
     return undefined
@@ -25,5 +26,5 @@ export function resolveAgentRowPaneLiveTitle(
   if (!leafId) {
     return null
   }
-  return resolveRuntimePaneTitleForLeaf(layout, paneTitles, leafId)
+  return resolveRuntimePaneTitleForLeaf(layout, paneTitles, leafId, paneTitleLeafIds)
 }

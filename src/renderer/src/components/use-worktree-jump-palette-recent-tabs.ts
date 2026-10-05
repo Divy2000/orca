@@ -48,6 +48,7 @@ export function useWorktreeJumpPaletteRecentTabs({
   migrationUnsupportedByPtyId,
   ptyIdsByTabId,
   runtimePaneTitlesByTabId,
+  runtimePaneTitleLeafIdsByTabId,
   terminalLayoutsByTabId,
   openTabItems,
   workspaceTabEntries,
@@ -107,14 +108,16 @@ export function useWorktreeJumpPaletteRecentTabs({
       ),
       ptyIdsByTabId,
       runtimePaneTitlesByTabId,
-      terminalLayoutsByTabId
+      terminalLayoutsByTabId,
+      runtimePaneTitleLeafIdsByTabId
     }),
     [
       agentStatusByPaneKey,
       migrationUnsupportedByPtyId,
       ptyIdsByTabId,
       runtimePaneTitlesByTabId,
-      terminalLayoutsByTabId
+      terminalLayoutsByTabId,
+      runtimePaneTitleLeafIdsByTabId
     ]
   )
   const openTabRecentRows = useMemo<OpenTabRecentRow[]>(() => {

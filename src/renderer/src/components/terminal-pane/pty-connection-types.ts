@@ -55,7 +55,11 @@ export type PaneProcessExit = {
 
 export type PtyConnectionDeps = {
   tabId: string
+  /** The workspace whose tab mounts this pane; navigation and tab lookups use it. */
   worktreeId: string
+  /** The workspace the pane reports unread to; its home when hosted in another workspace's tab.
+   *  Absent means `worktreeId`. */
+  attributionWorktreeId?: string
   cwd?: string
   /** Delays a fresh split's spawn without delaying its renderer pane. */
   cwdPromise?: Promise<string>
@@ -101,7 +105,7 @@ export type PtyConnectionDeps = {
   consumeSuppressedPtyExit: (ptyId: string) => boolean
   isPtyShutdownPending: (ptyId: string) => boolean
   updateTabTitle: (tabId: string, title: string) => void
-  setRuntimePaneTitle: (tabId: string, paneId: number, title: string) => void
+  setRuntimePaneTitle: (tabId: string, paneId: number, title: string, leafId?: string) => void
   clearRuntimePaneTitle: (tabId: string, paneId: number) => void
   updateTabPtyId: (
     tabId: string,

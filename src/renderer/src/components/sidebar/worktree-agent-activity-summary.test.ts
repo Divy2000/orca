@@ -634,3 +634,74 @@ describe('selectWorktreeAgentActivitySummary', () => {
     expect(status).toBe('active')
   })
 })
+
+describe('foreign pane attribution', () => {
+  const W1 = 'repo::/wt-1'
+  const W2 = 'repo::/wt-2'
+  const FOREIGN_LEAF = '22222222-2222-4222-8222-222222222222'
+
+  function hostedState(paneKey: string): AgentActivityInput {
+    return {
+      tabsByWorktree: { [W1]: [makeTab('tab-w1', W1)], [W2]: [makeTab('tab-w2', W2)] },
+      terminalLayoutsByTabId: {
+        'tab-w2': {
+          root: {
+            type: 'split',
+            direction: 'vertical',
+            first: { type: 'leaf', leafId: LEAF_ID },
+            second: { type: 'leaf', leafId: FOREIGN_LEAF }
+          },
+          activeLeafId: LEAF_ID,
+          expandedLeafId: null,
+          homeByLeafId: {
+            [FOREIGN_LEAF]: { worktreeId: W1, sessionTabId: 'tab-w1', sessionLeafId: FOREIGN_LEAF }
+          }
+        }
+      },
+      agentStatusEpoch: 0,
+      agentStatusByPaneKey: { [paneKey]: makeAgentStatusEntry({ paneKey, state: 'working' }) },
+      migrationUnsupportedByPtyId: {},
+      retainedAgentsByPaneKey: {}
+    }
+  }
+
+  it('given a W1 working row on a pane hosted in a W2 tab then W1 is working and W2 is not', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000)
+    const state = hostedState(makePaneKey('tab-w2', FOREIGN_LEAF))
+
+    expect(selectWorktreeAgentActivitySummary(state, W1).hasLiveWorking).toBe(true)
+    expect(selectWorktreeAgentActivitySummary(state, W2).hasLiveWorking).toBe(false)
+  })
+
+  it('given a migration-unsupported row on the foreign pane then W1 needs permission and W2 does not', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000)
+    const paneKey = makePaneKey('tab-w2', FOREIGN_LEAF)
+    const state: AgentActivityInput = {
+      ...hostedState(paneKey),
+      agentStatusByPaneKey: {},
+      migrationUnsupportedByPtyId: {
+        'pty-foreign': {
+          ptyId: 'pty-foreign',
+          worktreeId: W1,
+          tabId: 'tab-w2',
+          leafId: FOREIGN_LEAF,
+          paneKey,
+          reason: 'legacy-numeric-pane-key',
+          source: 'local',
+          updatedAt: 1_000
+        }
+      }
+    }
+
+    expect(selectWorktreeAgentActivitySummary(state, W1).hasPermission).toBe(true)
+    expect(selectWorktreeAgentActivitySummary(state, W2).hasPermission).toBe(false)
+  })
+
+  it('keeps a native pane row of the same tab on the host', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000)
+    const state = hostedState(makePaneKey('tab-w2', LEAF_ID))
+
+    expect(selectWorktreeAgentActivitySummary(state, W2).hasLiveWorking).toBe(true)
+    expect(selectWorktreeAgentActivitySummary(state, W1).hasLiveWorking).toBe(false)
+  })
+})

@@ -215,7 +215,8 @@ export function createWorkspaceTerminalHydrationActions(
             releasedPtyIdsByTabId,
             session,
             tabById,
-            validTabIds
+            validTabIds,
+            validWorktreeIds
           }),
           localOnlyScrollbackByTabId: Object.fromEntries(
             Object.entries(session.localOnlyScrollbackByTabId ?? {}).filter(([tabId]) =>

@@ -87,6 +87,23 @@ describe('terminal layout PTY ownership normalization', () => {
     })
   })
 
+  it('keeps a pruned duplicate leaf home entry on the surviving leaf', () => {
+    const home = {
+      worktreeId: 'repo-1::/work/foreign',
+      sessionTabId: 'tab-home',
+      sessionLeafId: LEAF_3
+    }
+    const layout = duplicatePtyLayout()
+    layout.homeByLeafId = { [LEAF_1]: home, [LEAF_3]: { ...home, sessionTabId: 'tab-other' } }
+
+    const normalized = normalizeTerminalLayoutSnapshot(layout).snapshot
+
+    expect(normalized.homeByLeafId).toEqual({
+      [LEAF_2]: home,
+      [LEAF_3]: { ...home, sessionTabId: 'tab-other' }
+    })
+  })
+
   it('keeps the first layout leaf when focus belongs to another PTY', () => {
     const layout = duplicatePtyLayout()
     layout.activeLeafId = LEAF_3

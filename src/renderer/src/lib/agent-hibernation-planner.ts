@@ -16,7 +16,10 @@ export const MAX_AGENT_HIBERNATION_IDLE_MS = 24 * 60 * 60 * 1000
 
 export type AgentHibernationCandidate = {
   id: string
+  /** The workspace whose tab mounts the pane; tab and runtime operations address it. */
   worktreeId: string
+  /** Set when the pane is hosted for another workspace: its records and status belong there. */
+  homeWorktreeId?: string
   paneKey: string
   tabId: string
   leafId: string
@@ -158,6 +161,9 @@ export function planAgentHibernationCandidates(
           candidates.push({
             id: candidateIdFor(worktreeId, eligible.paneKey),
             worktreeId,
+            ...(eligible.paneWorktreeId !== worktreeId
+              ? { homeWorktreeId: eligible.paneWorktreeId }
+              : {}),
             paneKey: eligible.paneKey,
             tabId: eligible.tabId,
             leafId: eligible.leafId,

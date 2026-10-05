@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { IDisposable } from '@xterm/xterm'
 import { useAppStore } from '../../store'
@@ -23,6 +23,10 @@ import type { PaneProcessExit } from './pty-connection-types'
 import type { PaneCwdMap } from './resolve-split-cwd'
 import type { TerminalErrorsByPaneId } from './terminal-error-accumulation'
 import { selectTerminalPaneHostState } from './terminal-pane-host-state'
+import {
+  parseTerminalPaneHomeLabelsKey,
+  selectTerminalPaneHomeLabelsKey
+} from './use-terminal-pane-home-labels'
 
 export function useTerminalPaneFoundation(
   props: TerminalPaneProps,
@@ -73,8 +77,19 @@ export function useTerminalPaneFoundation(
     sshReconnectStatus,
     sshReconnectTargetId,
     sshReconnectTargetLabel,
-    sshReconnectTargetRemoved
-  } = useAppStore(useShallow((store) => selectTerminalPaneHostState(store, worktreeId)))
+    sshReconnectTargetRemoved,
+    paneHomeLabelsKey
+  } = useAppStore(
+    useShallow((store) => ({
+      ...selectTerminalPaneHostState(store, worktreeId),
+      // Why folded: one more per-pane listener is paid on every store publication by every tab.
+      paneHomeLabelsKey: selectTerminalPaneHomeLabelsKey(store, tabId, worktreeId)
+    }))
+  )
+  const paneHomeLabels = useMemo(
+    () => parseTerminalPaneHomeLabelsKey(paneHomeLabelsKey),
+    [paneHomeLabelsKey]
+  )
   const sshReconnectOwnsTerminalErrors = Boolean(
     sshReconnectTargetId && sshReconnectStatus && sshReconnectStatus !== 'connected'
   )
@@ -161,6 +176,7 @@ export function useTerminalPaneFoundation(
     ...props,
     ref,
     tabId,
+    paneHomeLabels,
     worktreeId,
     cwd,
     isActive,

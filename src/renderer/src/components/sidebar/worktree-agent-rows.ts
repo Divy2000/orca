@@ -140,10 +140,11 @@ function markCompletedWorkerParentPaneKeysSeen(args: {
 }
 
 export function buildWorktreeAgentRows(args: {
-  tabs: TerminalTab[]
+  tabs: readonly TerminalTab[]
   entries: AgentStatusEntry[]
   retained: RetainedAgentEntry[]
   runtimePaneTitlesByTabId?: Record<string, Record<number, string>>
+  runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string>>
   ptyIdsByTabId?: Record<string, string[]>
   terminalLayoutsByTabId?: Record<string, TerminalLayoutSnapshot | undefined>
   runtimeAgentOrchestrationByPaneKey?: Record<string, AgentStatusOrchestrationContext>

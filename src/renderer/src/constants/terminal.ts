@@ -49,6 +49,8 @@ export type PasteTerminalTextDetail = {
 export type SplitTerminalPaneDetail = {
   tabId: string
   worktreeId?: string
+  /** The source pane's home when it is hosted in another workspace's tab; the new pane inherits it. */
+  homeWorktreeId?: string
   paneRuntimeId: number
   direction: 'horizontal' | 'vertical'
   command?: string
@@ -57,6 +59,11 @@ export type SplitTerminalPaneDetail = {
   telemetrySource?: TerminalPaneSplitSource
   newLeafId?: string
   ptyId?: string
+  /** `before` puts the new pane left of/above the source (left and top drop zones). */
+  placement?: 'before' | 'after'
+  /** The new leaf is a pane moved in from another tab; its records (and any home) are already in
+   *  the stored layout, so it inherits nothing from the source pane. */
+  movedLeaf?: boolean
 }
 
 export type RequestActiveTerminalPaneSplitDetail = {

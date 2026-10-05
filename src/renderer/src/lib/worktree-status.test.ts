@@ -454,3 +454,23 @@ describe('resolveWorktreeStatus', () => {
     expect(status).toBe('active')
   })
 })
+
+describe('pane title placement through recorded leaf bindings', () => {
+  it('given a permission title bound to the leaf a fresh hook already covers then working wins', () => {
+    const status = resolveWorktreeStatus({
+      tabs: [{ id: 'tab-1', title: 'Codex' }],
+      browserTabs: [],
+      ptyIdsByTabId: livePtyMap('tab-1'),
+      runtimePaneTitlesByTabId: { 'tab-1': { 1: 'Codex - action required' } },
+      runtimePaneTitleLeafIdsByTabId: { 'tab-1': { 1: LEAF_ID_2 } },
+      agentStatusPaneIdsByTabId: { 'tab-1': new Set([LEAF_ID_2]) },
+      terminalLayoutsByTabId: { 'tab-1': splitLayout() },
+      hasPermission: false,
+      hasLiveWorking: true,
+      hasLiveDone: false,
+      hasRetainedDone: false
+    })
+
+    expect(status).toBe('working')
+  })
+})

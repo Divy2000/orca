@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { TerminalLayoutSnapshot } from '../../../../shared/terminal-tab-types'
-import { detachTerminalLayoutLeaf } from './terminal-layout-leaf-detach'
+import {
+  detachLastTerminalLayoutLeaf,
+  detachTerminalLayoutLeaf
+} from './terminal-layout-leaf-detach'
 
 const LEAF_1 = '11111111-1111-4111-8111-111111111111'
 const LEAF_2 = '22222222-2222-4222-8222-222222222222'
@@ -46,7 +49,32 @@ function splitLayout(): TerminalLayoutSnapshot {
   }
 }
 
+const FOREIGN_HOME = {
+  worktreeId: 'repo-1::/work/foreign',
+  sessionTabId: 'tab-home',
+  sessionLeafId: '99999999-9999-4999-8999-999999999999'
+}
+
 describe('detachTerminalLayoutLeaf', () => {
+  it('moves the detached leaf home entry to the detached layout and drops it from the source', () => {
+    const layout = { ...splitLayout(), homeByLeafId: { [LEAF_2]: FOREIGN_HOME } }
+
+    const detached = detachTerminalLayoutLeaf(layout, LEAF_2)
+
+    expect(detached?.detachedLayout.homeByLeafId).toEqual({ [LEAF_2]: FOREIGN_HOME })
+    expect(detached?.sourceLayout.homeByLeafId).toBeUndefined()
+    expect(Object.hasOwn(detached?.sourceLayout ?? {}, 'homeByLeafId')).toBe(false)
+  })
+
+  it('keeps sibling home entries on the source layout when another leaf is detached', () => {
+    const layout = { ...splitLayout(), homeByLeafId: { [LEAF_1]: FOREIGN_HOME } }
+
+    const detached = detachTerminalLayoutLeaf(layout, LEAF_2)
+
+    expect(detached?.sourceLayout.homeByLeafId).toEqual({ [LEAF_1]: FOREIGN_HOME })
+    expect(Object.hasOwn(detached?.detachedLayout ?? {}, 'homeByLeafId')).toBe(false)
+  })
+
   it('extracts a nested leaf into a single-pane layout while preserving SSH PTY state', () => {
     const detached = detachTerminalLayoutLeaf(splitLayout(), LEAF_2)
 
@@ -113,6 +141,39 @@ describe('detachTerminalLayoutLeaf', () => {
           ptyIdsByLeafId: { [LEAF_1]: 'pty-1' }
         },
         LEAF_1
+      )
+    ).toBeNull()
+  })
+})
+
+describe('detachLastTerminalLayoutLeaf', () => {
+  it('detaches a single-pane layout whole and leaves an empty source layout', () => {
+    const layout: TerminalLayoutSnapshot = {
+      root: { type: 'leaf', leafId: LEAF_1 },
+      activeLeafId: LEAF_1,
+      expandedLeafId: LEAF_1,
+      ptyIdsByLeafId: { [LEAF_1]: 'pty-1' },
+      titlesByLeafId: { [LEAF_1]: 'one' },
+      homeByLeafId: { [LEAF_1]: FOREIGN_HOME }
+    }
+
+    expect(detachLastTerminalLayoutLeaf(layout, LEAF_1)).toEqual({
+      sourceLayout: { root: null, activeLeafId: null, expandedLeafId: null },
+      detachedLayout: { ...layout, expandedLeafId: null },
+      ptyId: 'pty-1'
+    })
+  })
+
+  it('returns null for a split layout or another leaf', () => {
+    expect(detachLastTerminalLayoutLeaf(splitLayout(), LEAF_1)).toBeNull()
+    expect(
+      detachLastTerminalLayoutLeaf(
+        {
+          root: { type: 'leaf', leafId: LEAF_1 },
+          activeLeafId: LEAF_1,
+          expandedLeafId: null
+        },
+        LEAF_2
       )
     ).toBeNull()
   })

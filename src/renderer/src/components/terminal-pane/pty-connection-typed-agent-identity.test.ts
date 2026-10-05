@@ -183,7 +183,7 @@ describe('connectPanePty', () => {
     })
 
     expect(transport.sendInput).toHaveBeenCalledWith('omp\r', 'query-reply')
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'OMP ready')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'OMP ready', LEAF_1)
     expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', 'OMP ready')
     expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({
       state: 'done',
@@ -211,7 +211,7 @@ describe('connectPanePty', () => {
     onTitleChange('✦ Gemini CLI', '✦ Gemini CLI')
 
     // Display/runtime/tab title and the GPU gate all come from the same decision.
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, '✦ Gemini CLI')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, '✦ Gemini CLI', LEAF_1)
     expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', '✦ Gemini CLI')
     // Genuine Gemini under the default `auto` setting takes the DOM fallback.
     expect(manager.setPaneGpuRendering).toHaveBeenCalledWith(1, false)
@@ -437,7 +437,7 @@ describe('connectPanePty', () => {
     })
 
     expect(transport.sendInput).toHaveBeenCalledWith('pi \x17omp\r', 'query-reply')
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'OMP ready')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'OMP ready', LEAF_1)
     expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({
       state: 'done',
       agentType: 'omp',
@@ -475,7 +475,7 @@ describe('connectPanePty', () => {
     })
 
     expect(transport.sendInput).toHaveBeenCalledWith('pi\r', 'query-reply')
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Pi ready')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Pi ready', LEAF_1)
     expect(deps.updateTabTitle).toHaveBeenCalledWith('tab-1', 'Pi ready')
     expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({
       state: 'done',
@@ -526,7 +526,7 @@ describe('connectPanePty', () => {
     })
 
     expect(transport.sendInput).toHaveBeenCalledWith('omp\r', 'query-reply')
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Pi ready')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Pi ready', LEAF_1)
     expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({
       state: 'done',
       agentType: 'pi',
@@ -565,7 +565,7 @@ describe('connectPanePty', () => {
     })
 
     expect(transport.sendInput).toHaveBeenCalledWith('omp\r', 'query-reply')
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Pi ready')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'Pi ready', LEAF_1)
     expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({
       state: 'done',
       agentType: 'pi',
@@ -613,7 +613,7 @@ describe('connectPanePty', () => {
       agentType: 'pi'
     })
 
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'OMP ready')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'OMP ready', LEAF_1)
     expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({
       state: 'done',
       agentType: 'omp',

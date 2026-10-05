@@ -12,6 +12,11 @@ import { isNativeChatTranscriptLocalReadable } from '@/lib/native-chat-transcrip
 import { tryMakePaneKey } from './agent-status-routing'
 import { useAppStore } from '../../store'
 import {
+  buildTerminalPaneHomeIndex,
+  resolvePaneNavigationWorktreeId
+} from '@/lib/terminal-pane-home-index'
+import { installSplitPaneHome } from '@/components/terminal-pane/terminal-pane-split-home'
+import {
   activateExistingLeafInLayout,
   activateTerminalInitiatedWorktree,
   addSplitLeafToLayout,
@@ -24,7 +29,7 @@ export function registerTerminalPresentationIpcBridge(unsubs: (() => void)[]): v
     window.api.ui.onCreateTerminal(
       ({
         requestId,
-        worktreeId,
+        worktreeId: requestedWorktreeId,
         command,
         cwd,
         env,
@@ -47,6 +52,16 @@ export function registerTerminalPresentationIpcBridge(unsubs: (() => void)[]): v
       }) => {
         try {
           const store = useAppStore.getState()
+          // Why: main names a split of a foreign pane by its home; the split lands in the host tab.
+          const worktreeId =
+            tabId && splitFromLeafId
+              ? resolvePaneNavigationWorktreeId(
+                  buildTerminalPaneHomeIndex(store.tabsByWorktree, store.terminalLayoutsByTabId),
+                  tabId,
+                  splitFromLeafId,
+                  requestedWorktreeId
+                )
+              : requestedWorktreeId
           const terminalPresentation = resolveTerminalPresentation({
             presentation,
             activate,
@@ -168,11 +183,20 @@ export function registerTerminalPresentationIpcBridge(unsubs: (() => void)[]): v
                   shouldActivate
                 )
               )
+              installSplitPaneHome({
+                tabId: tab.id,
+                tabWorktreeId: worktreeId,
+                sourceLeafId: splitFromLeafId,
+                newLeafId: leafId
+              })
               window.dispatchEvent(
                 new CustomEvent<SplitTerminalPaneDetail>(SPLIT_TERMINAL_PANE_EVENT, {
                   detail: {
                     tabId: tab.id,
                     worktreeId,
+                    ...(worktreeId !== requestedWorktreeId
+                      ? { homeWorktreeId: requestedWorktreeId }
+                      : {}),
                     paneRuntimeId: -1,
                     direction: splitDirection ?? 'horizontal',
                     sourceLeafId: splitFromLeafId,

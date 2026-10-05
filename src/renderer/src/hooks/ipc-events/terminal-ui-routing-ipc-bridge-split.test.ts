@@ -7,11 +7,13 @@ const mocks = vi.hoisted(() => {
   const state: {
     tabsByWorktree: Record<string, { id: string }[]>
     unifiedTabsByWorktree: Record<string, { id: string; entityId: string; contentType: string }[]>
+    terminalLayoutsByTabId: Record<string, unknown>
   } = {
     tabsByWorktree: {
       'repo::/folder': [{ id: 'tab-parked' }]
     },
-    unifiedTabsByWorktree: {}
+    unifiedTabsByWorktree: {},
+    terminalLayoutsByTabId: {}
   }
   return {
     hasRegisteredRuntimeTerminalTab: vi.fn<(tabId: string, worktreeId?: string) => boolean>(),
@@ -48,6 +50,7 @@ beforeEach(() => {
     'repo::/folder': [{ id: 'tab-parked' }]
   }
   mocks.state.unifiedTabsByWorktree = {}
+  mocks.state.terminalLayoutsByTabId = {}
 })
 
 afterEach(() => {
@@ -118,6 +121,50 @@ describe('runtime terminal split IPC routing', () => {
     ])
     expect(mocks.requestBackgroundTerminalWorktreeMount).not.toHaveBeenCalled()
     expect(hasTerminalPaneSplitMountLease('tab-parked')).toBe(false)
+    unregister()
+  })
+
+  it('given a split of a foreign pane named by its home then it routes to the host tab owner', () => {
+    const foreignLeaf = '22222222-2222-4222-8222-222222222222'
+    mocks.state.terminalLayoutsByTabId = {
+      'tab-parked': {
+        root: { type: 'leaf', leafId: foreignLeaf },
+        activeLeafId: foreignLeaf,
+        expandedLeafId: null,
+        homeByLeafId: {
+          [foreignLeaf]: {
+            worktreeId: 'repo::/home',
+            sessionTabId: 'home-tab',
+            sessionLeafId: foreignLeaf
+          }
+        }
+      }
+    }
+    mocks.hasRegisteredRuntimeTerminalTab.mockReturnValue(false)
+
+    routeRuntimeTerminalSplitRequest({
+      tabId: 'tab-parked',
+      worktreeId: 'repo::/home',
+      paneRuntimeId: 4,
+      sourceLeafId: foreignLeaf,
+      direction: 'vertical'
+    })
+
+    expect(mocks.requestBackgroundTerminalWorktreeMount).toHaveBeenCalledWith({
+      worktreeId: 'repo::/folder',
+      tabIds: ['tab-parked']
+    })
+    const received: SplitTerminalPaneDetail[] = []
+    const unregister = registerTerminalPaneSplitRequestHandler(
+      'tab-parked',
+      'repo::/folder',
+      (detail) => {
+        received.push(detail)
+      }
+    )
+    expect(received).toEqual([
+      expect.objectContaining({ worktreeId: 'repo::/folder', homeWorktreeId: 'repo::/home' })
+    ])
     unregister()
   })
 

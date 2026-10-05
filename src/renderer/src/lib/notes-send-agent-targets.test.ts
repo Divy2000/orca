@@ -281,6 +281,27 @@ describe('notes send agent targets', () => {
     expect(targets.map((target) => target.paneKey)).toEqual([makePaneKey(LAUNCH_TAB_ID, LEAF_B)])
   })
 
+  it('does not credit the active pane with a ready title recorded for its sibling', () => {
+    const targets = deriveNotesSendAgentTargets(
+      {
+        ...state({
+          tabsByWorktree: {
+            [WORKTREE_ID]: [tab(LAUNCH_TAB_ID, { title: 'Terminal 2', launchAgent: 'codex' })]
+          },
+          terminalLayoutsByTabId: {
+            [LAUNCH_TAB_ID]: splitLayout(LEAF_A, { [LEAF_A]: 'pty-a', [LEAF_B]: 'pty-b' })
+          },
+          runtimePaneTitlesByTabId: { [LAUNCH_TAB_ID]: { 1: 'Codex ready' } }
+        }),
+        runtimePaneTitleLeafIdsByTabId: { [LAUNCH_TAB_ID]: { 1: LEAF_B } }
+      },
+      WORKTREE_ID,
+      NOW
+    )
+
+    expect(targets).toEqual([])
+  })
+
   it('skips a launch-agent tab with only a bare agent-name title', () => {
     const targets = deriveNotesSendAgentTargets(
       state({

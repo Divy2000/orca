@@ -45,7 +45,6 @@ export type WorktreePointerDrag = {
   preview: HTMLElement | null
   previewOffsetX: number
   previewOffsetY: number
-  workspaceBoardDragPreviewRequested: boolean
   frameId: number | null
   reorderIntent: { dropIndex: number; pointerY: number; startedAt: number } | null
   latestBoardDropTarget: WorkspaceKanbanCardTrackedDropTarget | null

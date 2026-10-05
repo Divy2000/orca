@@ -1,7 +1,11 @@
 import type { AppState } from '@/store'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { PaneCwdEntry } from './resolve-split-cwd'
-import { detachTerminalLayoutLeaf } from './terminal-layout-leaf-detach'
+import {
+  detachLastTerminalLayoutLeaf,
+  detachTerminalLayoutLeaf
+} from './terminal-layout-leaf-detach'
+import { normalizeTerminalLeafHomes } from '../../../../shared/terminal-pane-home'
 export {
   isTerminalTabStripDropTarget,
   resolveTerminalTabStripDropTarget
@@ -10,6 +14,7 @@ export type { TerminalTabStripDropTarget } from './terminal-tab-strip-drop-targe
 
 export type TerminalPaneTabDetachStore = Pick<
   AppState,
+  | 'closeTab'
   | 'createTab'
   | 'groupsByWorktree'
   | 'reorderUnifiedTabs'
@@ -84,16 +89,25 @@ export function detachTerminalPaneToTab(args: {
   sourcePaneId: number
   sourcePaneCwd?: SourcePaneCwd
   sourceTabId: string
-  targetGroupId: string
+  /** Omitted: the new tab joins the target workspace's active group. */
+  targetGroupId?: string
   targetIndex?: number
   worktreeId: string
+  /** Workspace that receives the new tab; defaults to the source tab's own. */
+  targetWorktreeId?: string
+  activate?: boolean
+  /** Moves a tab's only pane too; the emptied source tab then closes without killing the PTY. */
+  allowLastPane?: boolean
 }): DetachedTerminalPaneTab | null {
+  const targetWorktreeId = args.targetWorktreeId ?? args.worktreeId
+  const activate = args.activate !== false
   const initialStore = args.getStore()
+  const targetGroups = initialStore.groupsByWorktree[targetWorktreeId] ?? []
   const targetGroupExists =
-    initialStore.groupsByWorktree[args.worktreeId]?.some(
-      (group) => group.id === args.targetGroupId
-    ) ?? false
-  if (!args.manager || !targetGroupExists || args.manager.getPanes().length <= 1) {
+    args.targetGroupId === undefined ||
+    targetGroups.some((group) => group.id === args.targetGroupId)
+  const detachesLastPane = (args.manager?.getPanes().length ?? 0) <= 1
+  if (!args.manager || !targetGroupExists || (detachesLastPane && !args.allowLastPane)) {
     return null
   }
 
@@ -113,24 +127,29 @@ export function detachTerminalPaneToTab(args: {
 
   args.persistLayoutSnapshot()
   const store = args.getStore()
-  const detached = detachTerminalLayoutLeaf(
-    store.terminalLayoutsByTabId[args.sourceTabId],
-    sourceLeafId
-  )
+  const sourceLayout = store.terminalLayoutsByTabId[args.sourceTabId]
+  const detached = detachesLastPane
+    ? detachLastTerminalLayoutLeaf(sourceLayout, sourceLeafId)
+    : detachTerminalLayoutLeaf(sourceLayout, sourceLeafId)
   if (!detached) {
     return null
   }
 
   const ptyId = detached.ptyId ?? args.fallbackPtyId ?? null
-  const detachedLayout = withDetachedPtyFallback({
-    leafId: sourceLeafId,
-    ptyId,
-    detachedLayout: detached.detachedLayout
-  })
+  // Why: a pane landing in a tab of its own home workspace is native there again.
+  const detachedLayout = normalizeTerminalLeafHomes(
+    withDetachedPtyFallback({
+      leafId: sourceLeafId,
+      ptyId,
+      detachedLayout: detached.detachedLayout
+    }),
+    targetWorktreeId
+  )
 
   // Why: remove the renderer pane only after the layout/PTY handoff has been
   // computed; the close callback detaches listeners but must not kill the PTY.
-  if (!args.manager.detachPaneForExternalMove(args.sourcePaneId)) {
+  // A last pane stays mounted until its tab closes, which detaches (never kills) it.
+  if (!detachesLastPane && !args.manager.detachPaneForExternalMove(args.sourcePaneId)) {
     return null
   }
 
@@ -138,8 +157,8 @@ export function detachTerminalPaneToTab(args: {
   const sourceShellOverride = latestStore.tabsByWorktree[args.worktreeId]?.find(
     (candidate) => candidate.id === args.sourceTabId
   )?.shellOverride
-  const tab = latestStore.createTab(args.worktreeId, args.targetGroupId, sourceShellOverride, {
-    activate: true,
+  const tab = latestStore.createTab(targetWorktreeId, args.targetGroupId, sourceShellOverride, {
+    activate,
     ...(detachedLayout.chatLeafId ? { viewMode: 'chat' as const } : {}),
     initialPtyId: ptyId ?? undefined,
     ...(!ptyId
@@ -148,17 +167,21 @@ export function detachTerminalPaneToTab(args: {
           ...(args.sourcePaneCwd?.cwd ? { startupCwd: args.sourcePaneCwd.cwd } : {})
         }
       : {}),
-    recordInteraction: true
+    recordInteraction: activate
   })
   const afterCreateStore = args.getStore()
-  moveCreatedTabToIndex({
-    groupId: args.targetGroupId,
-    store: afterCreateStore,
-    tabId: tab.id,
-    targetIndex: args.targetIndex,
-    worktreeId: args.worktreeId
-  })
-  afterCreateStore.setTabLayout(args.sourceTabId, detached.sourceLayout)
+  if (args.targetGroupId !== undefined) {
+    moveCreatedTabToIndex({
+      groupId: args.targetGroupId,
+      store: afterCreateStore,
+      tabId: tab.id,
+      targetIndex: args.targetIndex,
+      worktreeId: targetWorktreeId
+    })
+  }
+  if (!detachesLastPane) {
+    afterCreateStore.setTabLayout(args.sourceTabId, detached.sourceLayout)
+  }
   afterCreateStore.setTabLayout(tab.id, detachedLayout)
   afterCreateStore.syncPaneDetachPtyOwnership({
     detachedLeafId: sourceLeafId,
@@ -167,8 +190,14 @@ export function detachTerminalPaneToTab(args: {
     sourceTabId: args.sourceTabId,
     targetTabId: tab.id
   })
-  afterCreateStore.setActiveTab(tab.id)
-  afterCreateStore.setActiveTabType('terminal', args.worktreeId)
+  if (detachesLastPane) {
+    // Why 'cleanup': the new tab owns the PTY, so retirement treats it as shared; 'pty-exit' would leave main's membership behind.
+    afterCreateStore.closeTab(args.sourceTabId, { reason: 'cleanup', captureRecentlyClosed: false })
+  }
+  if (activate) {
+    afterCreateStore.setActiveTab(tab.id)
+    afterCreateStore.setActiveTabType('terminal', targetWorktreeId)
+  }
 
   return { tab, leafId: sourceLeafId, ptyId }
 }

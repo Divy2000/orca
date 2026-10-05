@@ -4,6 +4,7 @@ export type PaletteStatusInputsState = Pick<
   AppState,
   | 'agentStatusByPaneKey'
   | 'runtimePaneTitlesByTabId'
+  | 'runtimePaneTitleLeafIdsByTabId'
   | 'ptyIdsByTabId'
   | 'terminalLayoutsByTabId'
   | 'tabsByWorktree'
@@ -21,6 +22,7 @@ export type PaletteIndexStatusSnapshot = Pick<
   PaletteStatusInputsState,
   | 'agentStatusByPaneKey'
   | 'runtimePaneTitlesByTabId'
+  | 'runtimePaneTitleLeafIdsByTabId'
   | 'unreadTerminalTabs'
   | 'unreadAgentCompletionPanes'
 >
@@ -28,6 +30,7 @@ export type PaletteIndexStatusSnapshot = Pick<
 const EMPTY_PALETTE_INDEX_STATUS: PaletteIndexStatusSnapshot = Object.freeze({
   agentStatusByPaneKey: {},
   runtimePaneTitlesByTabId: {},
+  runtimePaneTitleLeafIdsByTabId: {},
   unreadTerminalTabs: {},
   unreadAgentCompletionPanes: {}
 })
@@ -48,6 +51,7 @@ export function selectPaletteIndexStatusSnapshot(
   return {
     agentStatusByPaneKey: s.agentStatusByPaneKey,
     runtimePaneTitlesByTabId: s.runtimePaneTitlesByTabId,
+    runtimePaneTitleLeafIdsByTabId: s.runtimePaneTitleLeafIdsByTabId,
     unreadTerminalTabs: s.unreadTerminalTabs,
     unreadAgentCompletionPanes: s.unreadAgentCompletionPanes
   }

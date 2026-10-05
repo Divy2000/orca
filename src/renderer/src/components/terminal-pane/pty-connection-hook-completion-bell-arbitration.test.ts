@@ -472,6 +472,36 @@ describe('connectPanePty', () => {
     expect(transport.sendInput).not.toHaveBeenCalled()
   })
 
+  it('given a pane hosted for another workspace when a key is pressed then the home unread clears', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    transportFactoryQueue.push(createMockTransport())
+    const pane = createPane(1)
+    pane.terminal.element = createPaneContainer()
+    const deps = createDeps({ attributionWorktreeId: 'wt-home' })
+
+    connectPanePty(pane as never, createManager(1) as never, deps as never)
+    const keydown = new Event('keydown')
+    Object.defineProperty(keydown, 'key', { value: 'a' })
+    ;(pane.terminal.element as EventTarget).dispatchEvent(keydown)
+
+    expect(deps.clearWorktreeUnread).toHaveBeenCalledWith('wt-home')
+    expect(deps.clearWorktreeUnread).not.toHaveBeenCalledWith('wt-1')
+    expect(deps.clearTerminalTabUnread).toHaveBeenCalledWith('tab-1')
+  })
+
+  it('given a pane hosted for another workspace when it rings the bell then the home is marked unread', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    transportFactoryQueue.push(createMockTransport())
+    const deps = createDeps({ attributionWorktreeId: 'wt-home' })
+
+    connectPanePty(createPane(1) as never, createManager(1) as never, deps as never)
+    const onBell = createdTransportOptions[0]?.onBell as () => void
+    onBell()
+
+    expect(deps.markWorktreeUnread).toHaveBeenCalledWith('wt-home')
+    expect(deps.markTerminalTabUnread).toHaveBeenCalledWith('tab-1', 'terminal-bell')
+  })
+
   it('clears tab, pane, and worktree unread on plain Escape keydown', async () => {
     // Why: plain Escape is real input (\x1b) — a genuine "user is here" signal; the interrupt-intent early return must not skip the unread clears.
     const { connectPanePty } = await import('./pty-connection')

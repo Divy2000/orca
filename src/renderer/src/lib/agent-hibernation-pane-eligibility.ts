@@ -7,10 +7,13 @@ import { lastInputBlocksHibernation } from './agent-hibernation-input-guard'
 import { isLiveResumeAnchorForCompletedAgent } from './live-resume-anchor-record'
 import { agentTurnEndedUncleanly } from '../../../shared/agent-main-agent-verdict'
 import type { AgentHibernationPlannerSnapshot } from './agent-hibernation-planner-snapshot'
+import { resolveTerminalLeafHomeWorktreeId } from '../../../shared/terminal-pane-home'
 
 export type EligiblePane = {
   paneKey: string
   tabId: string
+  /** The workspace the pane belongs to: its home when hosted in another workspace's tab. */
+  paneWorktreeId: string
   leafId: string
   ptyId: string
   runtimePtyId: string
@@ -80,13 +83,18 @@ export function getEligiblePane(args: {
     mobileLockedPtyIds
   } = args
   const sleepingRecord = sleepingAgentSessionsByPaneKey[entry.paneKey]
+  // Why: a pane hosted in another workspace's tab is stamped and recorded under its home.
+  const leafId = parsePaneKey(entry.paneKey)?.leafId
+  const paneWorktreeId = leafId
+    ? resolveTerminalLeafHomeWorktreeId(layout, tab.worktreeId, leafId)
+    : tab.worktreeId
   // Why: a completed turn leaves the TUI alive and resumable, so every resumable
   // agent keeps a live resume anchor (#10238). That anchor is not a sleep record —
   // treating it as one is what stopped non-Pi agents hibernating at all.
   const hasOnlyLiveResumeAnchor = isLiveResumeAnchorForCompletedAgent(
     entry,
     sleepingRecord,
-    tab.worktreeId
+    paneWorktreeId
   )
   if (
     entry.state !== 'done' ||
@@ -99,7 +107,7 @@ export function getEligiblePane(args: {
   }
   if (
     getEntryTabId(entry) !== tab.id ||
-    (entry.worktreeId && entry.worktreeId !== tab.worktreeId)
+    (entry.worktreeId && entry.worktreeId !== paneWorktreeId)
   ) {
     return null
   }
@@ -141,7 +149,7 @@ export function getEligiblePane(args: {
   if (!livePane) {
     return null
   }
-  const { leafId, ptyId } = livePane
+  const { ptyId } = livePane
   const runtimePtyId = toRuntimePtyId(ptyId)
   if (!livePtyIds.has(runtimePtyId) || mobileLockedPtyIds.has(runtimePtyId)) {
     return null
@@ -149,7 +157,8 @@ export function getEligiblePane(args: {
   return {
     paneKey: entry.paneKey,
     tabId: tab.id,
-    leafId,
+    paneWorktreeId,
+    leafId: livePane.leafId,
     ptyId,
     runtimePtyId,
     agentType: entry.agentType,

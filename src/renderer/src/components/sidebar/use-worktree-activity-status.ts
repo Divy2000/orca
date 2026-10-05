@@ -4,6 +4,8 @@ import { useAppStore } from '@/store'
 import { resolveWorktreeStatus, type WorktreeStatus } from '@/lib/worktree-status'
 import { EMPTY_BROWSER_TABS, EMPTY_TABS } from './WorktreeCardHelpers'
 import {
+  resolveWorktreeStatusPaneInputs,
+  selectHostedPaneStatusInputs,
   selectLivePtyIdsForWorktree,
   selectTerminalLayoutRootsForWorktree,
   selectRuntimePaneTitlesForWorktree
@@ -22,6 +24,7 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
   const terminalLayoutRootsByTabId = useAppStore(
     useShallow((s) => selectTerminalLayoutRootsForWorktree(s, worktreeId))
   )
+  const hostedPaneInputs = useAppStore((s) => selectHostedPaneStatusInputs(s, worktreeId))
   const {
     hasPermission,
     hasLiveWorking,
@@ -38,33 +41,26 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
   // Why: compact and detailed cards need the same status-dot semantics:
   // runtime liveness gates title-derived states, then explicit agent rows can
   // promote working/permission/done so the dot matches visible agent state.
-  return useMemo(
-    () =>
-      resolveWorktreeStatus({
+  return useMemo(() => {
+    const paneInputs = resolveWorktreeStatusPaneInputs(
+      {
         tabs,
-        browserTabs,
         ptyIdsByTabId: ptyIdsForWorktree,
         runtimePaneTitlesByTabId: runtimePaneTitlesForWorktree,
-        agentStatusPaneIdsByTabId,
-        stalePaneIdsByTabId,
-        terminalLayoutRootsByTabId,
-        hasPermission,
-        hasLiveWorking,
-        hasLiveMonitoring,
-        hasFailed,
-        hasInterrupted,
-        hasLiveDone,
-        hasRetainedDone,
-        hasRetainedFailed
-      }),
-    [
-      tabs,
+        terminalLayoutRootsByTabId
+      },
+      worktreeId,
+      hostedPaneInputs
+    )
+    return resolveWorktreeStatus({
+      tabs: paneInputs.tabs,
       browserTabs,
-      ptyIdsForWorktree,
-      runtimePaneTitlesForWorktree,
+      ptyIdsByTabId: paneInputs.ptyIdsByTabId,
+      runtimePaneTitlesByTabId: paneInputs.runtimePaneTitlesByTabId,
       agentStatusPaneIdsByTabId,
       stalePaneIdsByTabId,
-      terminalLayoutRootsByTabId,
+      terminalLayoutRootsByTabId: paneInputs.terminalLayoutRootsByTabId,
+      runtimePaneTitleLeafIdsByTabId: hostedPaneInputs.runtimePaneTitleLeafIdsByTabId,
       hasPermission,
       hasLiveWorking,
       hasLiveMonitoring,
@@ -73,6 +69,24 @@ export function useWorktreeActivityStatus(worktreeId: string): WorktreeStatus {
       hasLiveDone,
       hasRetainedDone,
       hasRetainedFailed
-    ]
-  )
+    })
+  }, [
+    tabs,
+    browserTabs,
+    ptyIdsForWorktree,
+    runtimePaneTitlesForWorktree,
+    terminalLayoutRootsByTabId,
+    hostedPaneInputs,
+    worktreeId,
+    agentStatusPaneIdsByTabId,
+    stalePaneIdsByTabId,
+    hasPermission,
+    hasLiveWorking,
+    hasLiveMonitoring,
+    hasFailed,
+    hasInterrupted,
+    hasLiveDone,
+    hasRetainedDone,
+    hasRetainedFailed
+  ])
 }

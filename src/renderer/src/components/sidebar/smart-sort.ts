@@ -183,7 +183,8 @@ export function sortWorktreesSmart(
   runtimePaneTitlesByTabId: Record<string, Record<number, string>>,
   ptyIdsByTabId: Record<string, string[]>,
   migrationUnsupportedByPtyId?: Record<string, MigrationUnsupportedPtyEntry>,
-  terminalLayoutsByTabId?: Record<string, TerminalLayoutSnapshot>
+  terminalLayoutsByTabId?: Record<string, TerminalLayoutSnapshot>,
+  runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string>>
 ): Worktree[] {
   // Why: `tabHasLivePty` (over `ptyIdsByTabId`) is the source of truth for
   // liveness — slept terminals retain `tab.ptyId` as a wake hint, so reading
@@ -210,7 +211,8 @@ export function sortWorktreesSmart(
     ptyIdsByTabId,
     now,
     migrationUnsupportedByPtyId,
-    terminalLayoutsByTabId
+    terminalLayoutsByTabId,
+    runtimePaneTitleLeafIdsByTabId
   )
 
   return [...worktrees].sort(

@@ -11,9 +11,9 @@ import type {
 } from '../../../../shared/agent-status-types'
 import { FIRST_PANE_ID } from '../../../../shared/pane-key'
 import {
-  resolveRuntimePaneTitleLeafIdFromRoot,
-  resolveRuntimePaneTitleLeafIdFromSparseSlots,
-  collectRuntimePaneLeafIds
+  resolveRuntimePaneTitleSlotLeafId,
+  collectRuntimePaneLeafIds,
+  type RuntimePaneTitleLeafIds
 } from '@/lib/runtime-pane-title-leaf-id'
 import { isTerminalLeafId, makePaneKey } from '../../../../shared/stable-pane-id'
 import type { TerminalLayoutSnapshot, TerminalTab } from '../../../../shared/terminal-tab-types'
@@ -40,8 +40,9 @@ const EMPTY_TERMINAL_LAYOUTS: Record<string, TerminalLayoutSnapshot | undefined>
 const EMPTY_PANE_FOREGROUND: Record<string, TitleDerivedPaneForeground> = {}
 
 export function buildTitleDerivedAgentRows(args: {
-  tabs: TerminalTab[]
+  tabs: readonly TerminalTab[]
   runtimePaneTitlesByTabId?: Record<string, Record<number, string>>
+  runtimePaneTitleLeafIdsByTabId?: Record<string, Record<number, string>>
   ptyIdsByTabId?: Record<string, string[]>
   terminalLayoutsByTabId?: Record<string, TerminalLayoutSnapshot | undefined>
   runtimeAgentOrchestrationByPaneKey?: Record<string, AgentStatusOrchestrationContext>
@@ -90,6 +91,7 @@ export function buildTitleDerivedAgentRows(args: {
           liveSlotIds,
           liveSlotsAreDense,
           paneId: Number(paneId),
+          paneTitleLeafIds: args.runtimePaneTitleLeafIdsByTabId?.[tab.id],
           title
         })
         if (!leafId) {
@@ -305,36 +307,12 @@ function resolveLeafIdForTitleFallback(args: {
   liveSlotIds: number[]
   liveSlotsAreDense: boolean
   paneId: number
+  paneTitleLeafIds: RuntimePaneTitleLeafIds
   title: string
 }): string | null {
-  if (args.leafIds.length === 1) {
-    return args.leafIds[0]
-  }
-  if (args.paneId < FIRST_PANE_ID) {
-    // Parked slots are defined off the in-order leaf list, so invert that definition.
-    return args.leafIds[-args.paneId - 1] ?? null
-  }
-  if (args.liveSlotsAreDense) {
-    const creationOrderLeafId = resolveRuntimePaneTitleLeafIdFromRoot(
-      args.layout?.root,
-      String(args.paneId)
-    )
-    if (creationOrderLeafId) {
-      return creationOrderLeafId
-    }
-  }
-
-  // After an in-session close, PaneManager ids are sparse while the tab's live
-  // PTYs retain their relative order. Use the durable PTY-to-leaf bindings to
-  // recover the exact leaf instead of assigning a survivor by layout position.
-  const ptyBoundLeafId = resolveRuntimePaneTitleLeafIdFromSparseSlots({
-    layout: args.layout,
-    paneId: args.paneId,
-    liveSlotIds: args.liveSlotIds,
-    ptyIds: args.ptyIds
-  })
-  if (ptyBoundLeafId) {
-    return ptyBoundLeafId
+  const slotLeafId = resolveRuntimePaneTitleSlotLeafId(args)
+  if (slotLeafId) {
+    return slotLeafId
   }
 
   const matchingTitleLeafIds = Object.entries(args.layout?.titlesByLeafId ?? {})

@@ -539,7 +539,7 @@ describe('connectPanePty', () => {
         { kind: '2031-subscribe' }
       ]
     })
-    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'remote working')
+    expect(deps.setRuntimePaneTitle).toHaveBeenCalledWith('tab-1', 1, 'remote working', LEAF_1)
     expect(mockStoreState.setAgentStatus).toHaveBeenCalledTimes(1)
     expect(mockStoreState.setAgentStatus).toHaveBeenCalledWith(
       makePaneKey('tab-1', LEAF_1),
