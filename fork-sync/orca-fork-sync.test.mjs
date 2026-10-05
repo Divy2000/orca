@@ -2,11 +2,14 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -221,4 +224,61 @@ test('given a release retagged onto a new commit with the same lockfile, the bas
   git('update-ref', 'refs/upstream-tags/v1.0.0', 'HEAD')
   assert.match(original, /^[0-9a-f]{16}$/)
   assert.notEqual(key(), original)
+})
+
+const prepareBuildOutput = (dir, runDir = `${dir}/scratch/sync`) =>
+  runFunctions(dir, ['prepare_build_output'], `RUN_DIR='${runDir}'; prepare_build_output`)
+
+test('given scratch is active, dist becomes a symlink to a fresh scratch build dir', (t) => {
+  const dir = tempDir(t)
+  mkdirSync(join(dir, 'state/repo/dist'), { recursive: true })
+  writeFileSync(join(dir, 'state/repo/dist/stale'), '')
+  mkdirSync(join(dir, 'scratch/sync/build/dist'), { recursive: true })
+  writeFileSync(join(dir, 'scratch/sync/build/dist/stale'), '')
+  const run = prepareBuildOutput(dir)
+  assert.equal(run.status, 0, run.stderr)
+  assert.ok(lstatSync(join(dir, 'state/repo/dist')).isSymbolicLink())
+  assert.equal(readlinkSync(join(dir, 'state/repo/dist')), `${dir}/scratch/sync/build/dist`)
+  assert.deepEqual(readdirSync(join(dir, 'scratch/sync/build/dist')), [])
+})
+
+test('given a dist symlink left by an earlier run, preparing never deletes through it', (t) => {
+  const dir = tempDir(t)
+  mkdirSync(join(dir, 'state/repo'), { recursive: true })
+  mkdirSync(join(dir, 'elsewhere'))
+  writeFileSync(join(dir, 'elsewhere/keep'), 'kept')
+  symlinkSync(join(dir, 'elsewhere'), join(dir, 'state/repo/dist'))
+  const run = prepareBuildOutput(dir)
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(readFileSync(join(dir, 'elsewhere/keep'), 'utf8'), 'kept')
+  assert.equal(readlinkSync(join(dir, 'state/repo/dist')), `${dir}/scratch/sync/build/dist`)
+})
+
+test('given staging falls back to the state dir, dist is only cleared as before', (t) => {
+  const dir = tempDir(t)
+  mkdirSync(join(dir, 'state/repo/dist'), { recursive: true })
+  writeFileSync(join(dir, 'state/repo/dist/stale'), '')
+  const run = prepareBuildOutput(dir, `${dir}/state`)
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(existsSync(join(dir, 'state/repo/dist')), false)
+  assert.equal(existsSync(join(dir, 'state/build')), false)
+})
+
+test('given a build wrote through the dist symlink, run data cleanup removes the link and the scratch build', (t) => {
+  const dir = tempDir(t)
+  mkdirSync(join(dir, 'state/repo'), { recursive: true })
+  mkdirSync(join(dir, 'scratch/sync/build/dist/mac-arm64'), { recursive: true })
+  symlinkSync(join(dir, 'scratch/sync/build/dist'), join(dir, 'state/repo/dist'))
+  const run = runFunctions(dir, ['cleanup_run_data'], 'cleanup_run_data')
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(existsSync(join(dir, 'scratch/sync/build')), false)
+  assert.throws(() => lstatSync(join(dir, 'state/repo/dist')), { code: 'ENOENT' })
+})
+
+test('given staging falls back to the state dir, run data cleanup leaves a real dist alone', (t) => {
+  const dir = tempDir(t)
+  mkdirSync(join(dir, 'state/repo/dist/mac-arm64'), { recursive: true })
+  const run = runFunctions(dir, ['cleanup_run_data'], `RUN_DIR='${dir}/state'; cleanup_run_data`)
+  assert.equal(run.status, 0, run.stderr)
+  assert.ok(existsSync(join(dir, 'state/repo/dist/mac-arm64')))
 })

@@ -83,8 +83,12 @@ cleanup_run_data() {
     git -C "$REPO" worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
   fi
   rm -rf "$UPSTREAM_WORKTREE" "$FORK_REPORT" "${FORK_REPORT%.json}.log" "$RETRY_REPORT" "${RETRY_REPORT%.json}.log"
+  # Only the link is removed; a real dist/ from a fallback run stays as before.
+  if [[ -L "$REPO/dist" ]]; then
+    rm -f "$REPO/dist"
+  fi
   if [[ "$RUN_DIR" != "$STATE_DIR" ]]; then
-    rm -rf "$RUN_DIR/tmp"
+    rm -rf "$RUN_DIR/tmp" "$RUN_DIR/build"
     rmdir "$RUN_DIR" 2>/dev/null || true
   fi
   if [[ -d "$REPO/.git" ]]; then
@@ -156,6 +160,19 @@ orca_running() {
   awk -v exe="$APP_PATH/Contents/MacOS/Orca" \
     'index($0, exe) == 1 && (length($0) == length(exe) || substr($0, length(exe) + 1, 1) == " ") { found = 1 }
      END { exit !found }' <<<"$processes"
+}
+
+# Why: electron-builder writes the packaged apps through a symlinked dist/, so
+# they land on scratch. out/ stays a real directory: electron-builder silently
+# leaves a symlinked out/ out of app.asar. The link must not exist before the
+# repair commit's `git add -A`, since a symlink does not match the dist/ ignore rule.
+prepare_build_output() {
+  rm -rf "$REPO/dist"
+  if [[ "$RUN_DIR" != "$STATE_DIR" ]]; then
+    rm -rf "$RUN_DIR/build/dist"
+    mkdir -p "$RUN_DIR/build/dist"
+    ln -s "$RUN_DIR/build/dist" "$REPO/dist"
+  fi
 }
 
 # The last good staged build is only swapped out once its replacement is verified.
@@ -388,7 +405,7 @@ if ! verify; then
 fi
 
 log "Building signed macOS app for $current."
-rm -rf dist
+prepare_build_output
 ORCA_SELF_MANAGED_UPDATES=1 ORCA_MAC_LOCAL_APP_ONLY=1 CSC_NAME="$SIGN_IDENTITY" pnpm run build:mac >&2 || fail "build failed for $current"
 case "$(uname -m)" in
   arm64) built_app="dist/mac-arm64/Orca.app" ;;
