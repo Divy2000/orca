@@ -543,7 +543,7 @@ full_suite_reason() {
   fi
   changed="$(git diff --name-only --no-renames "$latest_ref" --)" || return 1
   global="$(printf '%s\n' "$changed" | grep -v '^fork-sync/' | grep -E \
-    '^(pnpm-lock\.yaml|package\.json|mobile/package\.json|config/vitest.*)$|(^|/)(tsconfig[^/]*\.json|\.npmrc|pnpm-workspace\.yaml|vitest[^/]*\.config\.[cm]?[jt]s)$' \
+    '^(pnpm-lock\.yaml|package\.json|mobile/package\.json|mobile/pnpm-lock\.yaml|config/vitest.*)$|(^|/)(tsconfig[^/]*\.json|\.npmrc|pnpm-workspace\.yaml|vitest[^/]*\.config\.[cm]?[jt]s)$' \
     || true)"
   if [[ -n "$global" ]]; then
     printf 'the fork changed global test inputs: %s' "$(echo $global)"

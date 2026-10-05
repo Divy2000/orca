@@ -133,6 +133,7 @@ const GLOBAL_INPUTS = [
   'pnpm-lock.yaml',
   'package.json',
   'mobile/package.json',
+  'mobile/pnpm-lock.yaml',
   'tsconfig.json',
   'config/tsconfig.cli.json',
   'vitest.config.ts',
