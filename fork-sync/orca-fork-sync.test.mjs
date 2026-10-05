@@ -1,62 +1,28 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import {
   existsSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
   readlinkSync,
-  rmSync,
   symlinkSync,
   writeFileSync
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-
-const SCRIPT = readFileSync(new URL('./orca-fork-sync.sh', import.meta.url), 'utf8')
-
-function tempDir(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'fork-sync-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  return dir
-}
-
-function shellFunction(name) {
-  const match = SCRIPT.match(
-    new RegExp(`^${name}\\(\\) \\{(?:[^\\n]*\\}$|\\n[\\s\\S]*?^\\}$)`, 'm')
-  )
-  assert.ok(match, `orca-fork-sync.sh defines ${name}()`)
-  return match[0]
-}
-
-// Runs the script's own functions under the launchd shell with the system
-// tools that touch the desktop stubbed out. A bundle counts as validly
-// signed when it holds a "signed" marker file.
-function runFunctions(dir, names, call) {
-  const script = [
-    'set -euo pipefail',
-    `STATE_DIR='${dir}/state'`,
-    `REPO='${dir}/state/repo'`,
-    `RUN_DIR='${dir}/scratch/sync'`,
-    `UPSTREAM_WORKTREE='${dir}/scratch/sync/upstream'`,
-    `FORK_REPORT='${dir}/scratch/sync/fork-tests.json'`,
-    `RETRY_REPORT='${dir}/scratch/sync/fork-retry.json'`,
-    `STAGED_DIR='${dir}/scratch/sync/staged'`,
-    `APP_PATH='${dir}/Applications/Orca.app'`,
-    `LOG_FILE='${dir}/sync.log'`,
-    'INSTALL_WAIT_SECONDS=60',
-    `notify() { printf '%s: %s\\n' "$1" "$2" >> '${dir}/notifications'; }`,
-    'orca_running() { return 1; }',
-    'codesign() { local bundle; for bundle; do :; done; [[ -f "$bundle/signed" ]]; }',
-    'open() { :; }',
-    ...names.map(shellFunction),
-    call
-  ].join('\n')
-  return spawnSync('/bin/bash', ['-c', script], { encoding: 'utf8' })
-}
+import {
+  commit,
+  forkBeforeSilentDuplicate,
+  forkOf,
+  git,
+  newRepo,
+  release,
+  SILENT_DUPLICATE
+} from './git-fixtures.mjs'
+import { runFunctions, tempDir } from './shell-harness.mjs'
 
 function bundle(path, { signed = true, marker = 'old' } = {}) {
   mkdirSync(path, { recursive: true })
@@ -281,4 +247,68 @@ test('given staging falls back to the state dir, run data cleanup leaves a real 
   const run = runFunctions(dir, ['cleanup_run_data'], `RUN_DIR='${dir}/state'; cleanup_run_data`)
   assert.equal(run.status, 0, run.stderr)
   assert.ok(existsSync(join(dir, 'state/repo/dist/mac-arm64')))
+})
+
+const RESOLVER = fileURLToPath(new URL('./resolve-untouched-conflicts.mjs', import.meta.url))
+
+// Runs the script's merge step in a fork clone that has a pre-commit hook and a
+// Claude stand-in that only records being called.
+function mergeRelease(t, repo, preMerge) {
+  const dir = tempDir(t)
+  writeFileSync(
+    join(repo, '.git/hooks/pre-commit'),
+    '#!/bin/sh\ntouch "$(git rev-parse --git-dir)/pre-commit-ran"\n',
+    { mode: 0o755 }
+  )
+  const run = runFunctions(
+    dir,
+    ['log', 'fail', 'merge_upstream_release'],
+    [
+      `run_claude() { touch '${dir}/claude-called'; return 1; }`,
+      `RESOLVE_UNTOUCHED='${RESOLVER}' REPO='${repo}' BRANCH=fork`,
+      `latest=v1.1.0 latest_ref=refs/upstream-tags/v1.1.0 pre_merge=${preMerge}`,
+      `cd '${repo}'`,
+      'merge_upstream_release'
+    ].join('\n')
+  )
+  return { run, claudeCalled: existsSync(join(dir, 'claude-called')) }
+}
+
+function assertMergeCommitted(repo, run) {
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(git(repo, 'log', '-1', '--format=%s'), 'chore(fork): merge upstream v1.1.0')
+  assert.equal(git(repo, 'rev-list', '--parents', '-n', '1', 'HEAD').split(' ').length, 3)
+  assert.equal(git(repo, 'status', '--porcelain'), '')
+  assert.ok(existsSync(join(repo, '.git/pre-commit-ran')), 'the pre-commit hook ran')
+}
+
+test('given a clean merge that silently duplicated a block in an untouched file, the merge commit carries the upstream version', (t) => {
+  const { repo, preMerge } = forkBeforeSilentDuplicate(t)
+  const { run, claudeCalled } = mergeRelease(t, repo, preMerge)
+  assertMergeCommitted(repo, run)
+  assert.equal(readFileSync(join(repo, 'ready.ts'), 'utf8'), SILENT_DUPLICATE.upstream)
+  assert.equal(readFileSync(join(repo, 'patched.txt'), 'utf8'), SILENT_DUPLICATE.patchedMerged)
+  assert.match(
+    run.stderr,
+    /Restored upstream v1\.1\.0 for files the fork never modified: backport\.txt ready\.ts/
+  )
+  assert.equal(claudeCalled, false)
+})
+
+test('given conflicts only in files the fork never modified, the merge is committed without Claude', (t) => {
+  const upstream = newRepo(t)
+  commit(upstream, { 'shared.txt': 'base\n' }, 'base')
+  git(upstream, 'checkout', '-q', '-b', 'release')
+  commit(upstream, { 'shared.txt': 'release\n' }, 'release fix')
+  release(upstream, 'v1.0.0')
+  git(upstream, 'checkout', '-q', 'main')
+  commit(upstream, { 'shared.txt': 'upstream next\n' }, 'next release')
+  release(upstream, 'v1.1.0')
+  const repo = forkOf(t, upstream, 'v1.0.0')
+  const preMerge = commit(repo, { 'fork.txt': 'fork\n' }, 'fork patch')
+  const { run, claudeCalled } = mergeRelease(t, repo, preMerge)
+  assertMergeCommitted(repo, run)
+  assert.equal(readFileSync(join(repo, 'shared.txt'), 'utf8'), 'upstream next\n')
+  assert.match(run.stderr, /skipping the Claude session/)
+  assert.equal(claudeCalled, false)
 })

@@ -1,87 +1,28 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from 'node:fs'
-import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import {
+  commit,
+  conflicted,
+  forkBeforeSilentDuplicate,
+  forkOf,
+  git,
+  newRepo,
+  release,
+  SILENT_DUPLICATE,
+  tempDir,
+  UPSTREAM_FETCHES,
+  UPSTREAM_TAG_FETCH
+} from './git-fixtures.mjs'
+import {
+  normalizeUntouchedPaths,
   previousReleaseTag,
   resolveUntouchedConflicts,
   untouchedConflicts
 } from './resolve-untouched-conflicts.mjs'
-
-// Why: fixtures must not depend on the user's git config (signing, default branch, identity).
-Object.assign(process.env, {
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_NOSYSTEM: '1',
-  GIT_AUTHOR_NAME: 'fixture',
-  GIT_AUTHOR_EMAIL: 'fixture@example.com',
-  GIT_COMMITTER_NAME: 'fixture',
-  GIT_COMMITTER_EMAIL: 'fixture@example.com'
-})
-
-function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), prefix))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  return dir
-}
-
-// The sync script's own fetches from upstream, so fixtures exercise the real commands.
-const UPSTREAM_FETCHES = [
-  ...readFileSync(new URL('./orca-fork-sync.sh', import.meta.url), 'utf8').matchAll(
-    /^git (fetch [^|\n]*\bupstream\b[^|\n]*) \|\| fail /gm
-  )
-].map((match) => match[1].split(' ').map((arg) => arg.replace(/^'(.*)'$/, '$1')))
-const UPSTREAM_TAG_FETCH = UPSTREAM_FETCHES.find((args) =>
-  args.some((arg) => arg.endsWith(':refs/upstream-tags/*'))
-)
-
-const git = (repo, ...args) =>
-  execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
-
-function newRepo(t) {
-  const repo = join(tempDir(t, 'conflicts-'), 'upstream')
-  mkdirSync(repo)
-  git(repo, 'init', '-q', '-b', 'main')
-  return repo
-}
-
-function commit(repo, files, message) {
-  for (const [path, content] of Object.entries(files)) {
-    if (content === null) {
-      git(repo, 'rm', '-q', '--', path)
-    } else {
-      writeFileSync(join(repo, path), content)
-      git(repo, 'add', '--', path)
-    }
-  }
-  git(repo, 'commit', '-q', '--allow-empty', '-m', message)
-  return git(repo, 'rev-parse', 'HEAD')
-}
-
-const release = (repo, tag) => git(repo, 'tag', '-a', '-m', tag, tag)
-
-// Like the sync clone: upstream is a remote whose tags are also fetched into
-// their own namespace, so a fork-only tag can never pose as an upstream release.
-function forkOf(t, upstream, start) {
-  const fork = join(tempDir(t, 'conflicts-'), 'fork repo')
-  execFileSync('git', ['clone', '-q', '--origin', 'upstream', upstream, fork])
-  git(fork, 'checkout', '-q', '-b', 'fork', start)
-  git(fork, ...UPSTREAM_TAG_FETCH)
-  return fork
-}
-
-const conflicted = (repo) =>
-  git(repo, 'diff', '--name-only', '--diff-filter=U').split('\n').filter(Boolean).sort()
 
 // Upstream cut release v1.0.0 from a branch that diverged from main, so merging
 // main's v1.1.0 conflicts even in files the fork never touched.
@@ -266,6 +207,84 @@ test('given missing arguments, the CLI prints usage and fails', () => {
   const run = spawnSync(
     process.execPath,
     [fileURLToPath(new URL('./resolve-untouched-conflicts.mjs', import.meta.url))],
+    { encoding: 'utf8' }
+  )
+  assert.equal(run.status, 2)
+  assert.match(run.stderr, /^usage: resolve-untouched-conflicts\.mjs/)
+})
+
+const UPSTREAM = 'refs/upstream-tags/v1.1.0'
+
+function silentDuplicateMerge(t) {
+  const { repo, preMerge } = forkBeforeSilentDuplicate(t)
+  const merge = spawnSync('git', ['-C', repo, 'merge', '--no-ff', '--no-commit', UPSTREAM], {
+    encoding: 'utf8'
+  })
+  assert.equal(merge.status, 0, merge.stdout + merge.stderr)
+  assert.equal(
+    readFileSync(join(repo, 'ready.ts'), 'utf8').match(/^BLOCK$/gm).length,
+    2,
+    'fixture merge must silently duplicate the block'
+  )
+  return { repo, preMerge }
+}
+
+test('given a clean merge that duplicated a block in a file the fork never modified, the upstream version is restored and staged', (t) => {
+  const { repo, preMerge } = silentDuplicateMerge(t)
+  normalizeUntouchedPaths(repo, preMerge, UPSTREAM)
+  assert.equal(readFileSync(join(repo, 'ready.ts'), 'utf8'), SILENT_DUPLICATE.upstream)
+  assert.equal(git(repo, 'diff', '--cached', '--name-only', UPSTREAM, '--', 'ready.ts'), '')
+})
+
+test('given a file the fork modified, normalization keeps the merged version', (t) => {
+  const { repo, preMerge } = silentDuplicateMerge(t)
+  normalizeUntouchedPaths(repo, preMerge, UPSTREAM)
+  assert.equal(readFileSync(join(repo, 'patched.txt'), 'utf8'), SILENT_DUPLICATE.patchedMerged)
+})
+
+test('given files added or deleted only on the previous release line, normalization follows the conflict rules', (t) => {
+  const { repo, preMerge } = silentDuplicateMerge(t)
+  assert.deepEqual(normalizeUntouchedPaths(repo, preMerge, UPSTREAM), ['backport.txt', 'ready.ts'])
+  assert.equal(existsSync(join(repo, 'backport.txt')), false)
+  assert.equal(git(repo, 'ls-files', '--', 'backport.txt'), '')
+  assert.equal(existsSync(join(repo, 'gone.txt')), false)
+})
+
+test('given no previous upstream release, normalization changes nothing', (t) => {
+  const { repo, preMerge } = silentDuplicateMerge(t)
+  git(repo, 'update-ref', '-d', 'refs/upstream-tags/v1.0.0')
+  assert.deepEqual(normalizeUntouchedPaths(repo, preMerge, UPSTREAM), [])
+  assert.equal(readFileSync(join(repo, 'ready.ts'), 'utf8').match(/^BLOCK$/gm).length, 2)
+})
+
+test('given the normalize flag, the CLI restores untouched files and prints them', (t) => {
+  const { repo, preMerge } = silentDuplicateMerge(t)
+  const run = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(new URL('./resolve-untouched-conflicts.mjs', import.meta.url)),
+      '--normalize',
+      repo,
+      preMerge,
+      UPSTREAM
+    ],
+    { encoding: 'utf8' }
+  )
+  assert.equal(run.stderr, '')
+  assert.equal(run.status, 0)
+  assert.equal(run.stdout, 'backport.txt\nready.ts\n')
+  assert.equal(readFileSync(join(repo, 'ready.ts'), 'utf8'), SILENT_DUPLICATE.upstream)
+})
+
+test('given the normalize flag without an upstream ref, the CLI prints usage and fails', () => {
+  const run = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(new URL('./resolve-untouched-conflicts.mjs', import.meta.url)),
+      '--normalize',
+      '/repo',
+      'HEAD'
+    ],
     { encoding: 'utf8' }
   )
   assert.equal(run.status, 2)

@@ -1,13 +1,19 @@
 #!/usr/bin/env node
-// Pre-resolves merge conflicts that the fork has no stake in.
+// Gives files the fork has no stake in the upstream release's exact content.
 //
 //   resolve-untouched-conflicts.mjs <repo> <pre-merge-commit>
 //     Run while a merge of an upstream release is stopped on conflicts. Every
 //     conflicted path the fork never modified since the previous release it
 //     merged takes the upstream side and is staged. Prints each resolved path.
+//   resolve-untouched-conflicts.mjs --normalize <repo> <pre-merge-commit> <upstream-ref>
+//     Run on an uncommitted merge. Every path that differs from <upstream-ref>
+//     and that the fork never modified is restored to <upstream-ref> and staged,
+//     including ones git merged cleanly. Prints each restored path.
 //
-// Such conflicts come from upstream itself (a release cut from a branch that
-// diverged from the next release), so upstream's newer version is correct.
+// Such conflicts and differences come from upstream itself (a release cut from
+// a branch that diverged from the next release, where both lines carry the
+// same change at different places and a clean merge keeps both copies), so
+// upstream's newer version is correct.
 // Releases are read from upstream's own tags, which the sync fetches into
 // refs/upstream-tags/, so a fork-only tag can never pass for a release.
 import { execFileSync } from 'node:child_process'
@@ -59,14 +65,18 @@ function unchangedBetween(repo, from, to, path) {
 
 // A path the fork never had cannot be judged by its own history (it may hold
 // content upstream moved there by a rename), so it is left for review.
-export function untouchedConflicts(repo, preMerge) {
+function untouchedPaths(repo, preMerge, paths) {
   const release = previousReleaseTag(repo, preMerge)
   if (release === null) {
     return []
   }
-  return conflictedPaths(repo).filter(
+  return paths.filter(
     (path) => existsAt(repo, preMerge, path) && unchangedBetween(repo, release, preMerge, path)
   )
+}
+
+export function untouchedConflicts(repo, preMerge) {
+  return untouchedPaths(repo, preMerge, conflictedPaths(repo))
 }
 
 function upstreamHasPath(repo, path) {
@@ -88,13 +98,35 @@ export function resolveUntouchedConflicts(repo, preMerge) {
   return resolved
 }
 
+function pathsDifferingFrom(repo, ref) {
+  return nulSeparated(git(repo, 'diff', '--name-only', '--no-renames', '-z', ref, '--')).sort()
+}
+
+export function normalizeUntouchedPaths(repo, preMerge, upstreamRef) {
+  const restored = untouchedPaths(repo, preMerge, pathsDifferingFrom(repo, upstreamRef))
+  for (const path of restored) {
+    if (existsAt(repo, upstreamRef, path)) {
+      git(repo, 'checkout', upstreamRef, '--', path)
+    } else {
+      git(repo, 'rm', '--quiet', '--', path)
+    }
+  }
+  return restored
+}
+
 function main(args) {
-  const [repo, preMerge] = args
-  if (!preMerge) {
-    console.error('usage: resolve-untouched-conflicts.mjs <repo> <pre-merge-commit>')
+  const normalize = args[0] === '--normalize'
+  const [repo, preMerge, upstreamRef] = normalize ? args.slice(1) : args
+  if (!preMerge || (normalize && !upstreamRef)) {
+    console.error(
+      'usage: resolve-untouched-conflicts.mjs [--normalize] <repo> <pre-merge-commit> [<upstream-ref>]'
+    )
     return 2
   }
-  for (const path of resolveUntouchedConflicts(repo, preMerge)) {
+  const paths = normalize
+    ? normalizeUntouchedPaths(repo, preMerge, upstreamRef)
+    : resolveUntouchedConflicts(repo, preMerge)
+  for (const path of paths) {
     console.log(path)
   }
   return 0

@@ -62,6 +62,175 @@ fail() {
   exit 1
 }
 
+# Prints a watchdog limit given in whole minutes through the environment, in seconds.
+minutes_setting() {
+  local name="$1" default="$2" value
+  eval "value=\${$name:-$default}"
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "$name must be a whole number of minutes, got '$value'"
+  echo $(( value * 60 ))
+}
+
+load_average_5m() { sysctl -n vm.loadavg | awk '{ print $3 }'; }
+cpu_count() { sysctl -n hw.logicalcpu; }
+
+# Prints the given pids followed by all of their descendants.
+descendant_pids() {
+  local table queue="$*" next pid all=""
+  table="$(ps -A -o pid= -o ppid=)"
+  while [[ -n "$queue" ]]; do
+    next=""
+    for pid in $queue; do
+      all="$all $pid"
+      next="$next $(awk -v parent="$pid" '$2 == parent { print $1 }' <<<"$table")"
+    done
+    queue="$(echo $next)"
+  done
+  echo $all
+}
+
+# Why: a step runs in its own process group, but a worker spawned detached
+# leaves it; walking the process tree as well leaves no survivor.
+kill_step_tree() {
+  local root="$1" pids
+  pids="$(descendant_pids "$root")"
+  kill -TERM -- "-$root" $pids 2>/dev/null || true
+  sleep "$KILL_GRACE_SECONDS"
+  pids="$(descendant_pids $pids)"
+  kill -KILL -- "-$root" $pids 2>/dev/null || true
+}
+
+# Runs a long step in its own process group with its output appended to <log>.
+# The step and everything it started are killed when <log> stops growing for
+# <stall> seconds (0 disables this) or the step outlives <budget> seconds, and
+# the job then fails naming the step and the machine load. Otherwise returns
+# the step's own exit status.
+run_step() {
+  local name="$1" budget="$2" stall="$3" log_file="$4"; shift 4
+  local pid started now size last_size=-1 last_growth reason="" status=0
+  touch "$log_file"
+  set -m
+  ( "$@" ) </dev/null >>"$log_file" 2>&1 &
+  pid=$!
+  set +m
+  CURRENT_STEP_PID="$pid"
+  started="$(date +%s)"
+  last_growth="$started"
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep "$WATCHDOG_POLL_SECONDS"
+    now="$(date +%s)"
+    size="$(wc -c <"$log_file")"
+    if (( size != last_size )); then
+      last_size="$size"
+      last_growth="$now"
+    fi
+    if (( stall > 0 && now - last_growth >= stall )); then
+      reason="stalled (no output for $(( now - last_growth ))s)"
+    elif (( now - started >= budget )); then
+      reason="exceeded its budget of ${budget}s"
+    fi
+    if [[ -n "$reason" ]]; then
+      kill_step_tree "$pid"
+      wait "$pid" 2>/dev/null || true
+      CURRENT_STEP_PID=""
+      log "Last output of $name:"
+      tail -n 40 "$log_file" >&2
+      fail "$name $reason; machine load was $(load_average_5m) on $(cpu_count) cores"
+    fi
+  done
+  wait "$pid" || status=$?
+  CURRENT_STEP_PID=""
+  return "$status"
+}
+
+# Runs a watched step whose output belongs in the job log: it streams to a
+# step log the watchdog can measure and is copied into the job log at the end.
+run_logged_step() {
+  local name="$1" budget="$2" stall="$3"; shift 3
+  local step_log status=0
+  step_log="$RUN_DIR/step-$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '-').log"
+  : >"$step_log"
+  log "$name started; live output in $step_log"
+  run_step "$name" "$budget" "$stall" "$step_log" "$@" || status=$?
+  cat "$step_log" >&2
+  return "$status"
+}
+
+# Why: steps run outside the job's process group, so launchd stopping the job
+# no longer reaches them; the exit handler stops the running one instead.
+stop_current_step() {
+  if [[ -n "$CURRENT_STEP_PID" ]]; then
+    log "Stopping the running step (pid $CURRENT_STEP_PID) before exiting."
+    kill_step_tree "$CURRENT_STEP_PID"
+    CURRENT_STEP_PID=""
+  fi
+}
+
+# Prints a reduced vitest worker count while the machine is overloaded, or
+# nothing to keep vitest's default on a machine with spare cores.
+vitest_workers() {
+  awk -v load="$(load_average_5m)" -v cores="$(cpu_count)" 'BEGIN {
+    if (load <= cores) exit
+    workers = cores - int(load - cores)
+    cap = int(cores / 2)
+    if (workers > cap) workers = cap
+    if (workers < 1) workers = 1
+    print workers
+  }'
+}
+
+# Why: worker count changes timing-sensitive outcomes, so the upstream and fork
+# runs of one sync use the same count, chosen once.
+choose_vitest_workers() {
+  if [[ "$VITEST_WORKERS_CHOSEN" == true ]]; then
+    return 0
+  fi
+  VITEST_WORKERS="$(vitest_workers)"
+  VITEST_WORKERS_CHOSEN=true
+  log "Vitest workers for this sync: ${VITEST_WORKERS:-vitest default} (5-minute load $(load_average_5m) on $(cpu_count) cores)."
+}
+
+exit_if_machine_busy() {
+  local load cores
+  load="$(load_average_5m)"
+  cores="$(cpu_count)"
+  if awk -v load="$load" -v cores="$cores" 'BEGIN { exit !(load > 2 * cores) }'; then
+    log "SKIPPED: machine busy (5-minute load $load on $cores cores); sync not started. The next scheduled or manual run tries again."
+    notify "Orca fork sync" "machine busy, sync skipped"
+    exit 0
+  fi
+}
+
+load_watchdog_settings() {
+  STALL_SECONDS="$(minutes_setting ORCA_SYNC_STALL_MINUTES 30)"
+  TEST_BUDGET_SECONDS="$(minutes_setting ORCA_SYNC_TEST_BUDGET_MINUTES 120)"
+  TYPECHECK_BUDGET_SECONDS="$(minutes_setting ORCA_SYNC_TYPECHECK_BUDGET_MINUTES 90)"
+  INSTALL_BUDGET_SECONDS="$(minutes_setting ORCA_SYNC_INSTALL_BUDGET_MINUTES 30)"
+  BUILD_BUDGET_SECONDS="$(minutes_setting ORCA_SYNC_BUILD_BUDGET_MINUTES 90)"
+  CLAUDE_BUDGET_SECONDS="$(minutes_setting ORCA_SYNC_CLAUDE_BUDGET_MINUTES 60)"
+}
+
+# Prints "<budget-seconds> <stall-seconds>" for a kind of step. Why no stall
+# limit for typecheck, build and Claude: tsc (also inside build:mac) and
+# `claude -p` stay silent for long stretches while healthy.
+step_limits() {
+  case "$1" in
+    tests) echo "$TEST_BUDGET_SECONDS $STALL_SECONDS" ;;
+    install) echo "$INSTALL_BUDGET_SECONDS $STALL_SECONDS" ;;
+    typecheck) echo "$TYPECHECK_BUDGET_SECONDS 0" ;;
+    build) echo "$BUILD_BUDGET_SECONDS 0" ;;
+    claude) echo "$CLAUDE_BUDGET_SECONDS 0" ;;
+    *) fail "unknown kind of step '$1'" ;;
+  esac
+}
+
+load_watchdog_settings
+# Why: poll plus kill grace stays under launchd's 20s stop timeout.
+WATCHDOG_POLL_SECONDS=10
+KILL_GRACE_SECONDS=5
+CURRENT_STEP_PID=""
+VITEST_WORKERS=""
+VITEST_WORKERS_CHOSEN=false
+
 LOCK_FILE="$STATE_DIR/sync.lock"
 # Why: shlock creates the pid file atomically, so concurrent starts cannot both win.
 if ! shlock -f "$LOCK_FILE" -p $$; then
@@ -83,6 +252,7 @@ cleanup_run_data() {
     git -C "$REPO" worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
   fi
   rm -rf "$UPSTREAM_WORKTREE" "$FORK_REPORT" "${FORK_REPORT%.json}.log" "$RETRY_REPORT" "${RETRY_REPORT%.json}.log"
+  rm -f "$RUN_DIR"/step-*.log
   # Only the link is removed; a real dist/ from a fallback run stays as before.
   if [[ -L "$REPO/dist" ]]; then
     rm -f "$REPO/dist"
@@ -106,10 +276,12 @@ remove_legacy_staged() {
   fi
 }
 on_exit() {
+  stop_current_step
   cleanup_run_data || log "Could not fully clean run data in $RUN_DIR."
   [[ "$(cat "$LOCK_FILE" 2>/dev/null)" == "$$" ]] && rm -f "$LOCK_FILE"
 }
 trap on_exit EXIT
+trap 'exit 143' TERM HUP INT
 # Removes leftovers of a run that was killed before its trap could clean up.
 cleanup_run_data
 mkdir -p "$RUN_DIR"
@@ -118,6 +290,7 @@ if [[ "$RUN_DIR" != "$STATE_DIR" ]]; then
   export TMPDIR="$RUN_DIR/tmp"
 fi
 log "Run data directory: $RUN_DIR"
+exit_if_machine_busy
 # Why: Node reports the physical cwd, so vitest names upstream test files by the
 # real worktree path, not the symlinked one; failure ids are relative to it.
 UPSTREAM_ROOT="$(cd "$RUN_DIR" && pwd -P)/upstream"
@@ -142,7 +315,11 @@ Rules:
   staged with \`git add\`.
 - When done, print a short summary of what you changed and why.
 EOF
-  (cd "$REPO" && claude -p --dangerously-skip-permissions --max-turns "$CLAUDE_MAX_TURNS" "$prompt") || return 1
+  run_logged_step "Claude session" $(step_limits claude) claude_session "$prompt" || return 1
+}
+
+claude_session() {
+  cd "$REPO" && claude -p --dangerously-skip-permissions --max-turns "$CLAUDE_MAX_TURNS" "$1"
 }
 
 # Why: pgrep cannot see the Orca process on this machine (it once reported Orca
@@ -243,24 +420,38 @@ wait_and_install() {
 run_unit_tests() {
   local report="$1"; shift
   local console_log="${report%.json}.log"
+  : >"$console_log"
+  run_step "unit tests ($(basename "${report%.json}"))" $(step_limits tests) \
+    "$console_log" unit_test_commands "$report" "$@"
+}
+
+unit_test_commands() {
+  local report="$1"; shift
+  local workers=()
+  if [[ -n "$VITEST_WORKERS" ]]; then
+    workers=(--maxWorkers="$VITEST_WORKERS")
+  fi
   # Why: ORCA_BALANCE_UNIT_SHARDS changes which tests run, so both runs must agree on it.
-  NO_COLOR=1 node config/scripts/ensure-native-runtime.mjs --runtime=node >"$console_log" 2>&1 \
+  NO_COLOR=1 node config/scripts/ensure-native-runtime.mjs --runtime=node \
     && env -u ORCA_BALANCE_UNIT_SHARDS -u FORCE_COLOR NO_COLOR=1 pnpm exec vitest run --config config/vitest.config.ts \
-      --reporter=json --reporter=default --outputFile.json="$report" "$@" >>"$console_log" 2>&1
+      --reporter=json --reporter=default --outputFile.json="$report" ${workers[@]+"${workers[@]}"} "$@"
 }
 
 # Why: the upstream release itself fails some tests on this machine (CI-only
 # fixtures, local toolchain differences), so the gate is "the fork adds no
 # failures the same release does not already have", not "everything passes".
 # The baseline is reused only while every input that can change its outcome
-# (release and its commit, lockfile, Node, macOS, CPU, checkout root) is identical.
+# (release and its commit, lockfile, Node, macOS, CPU, checkout root, vitest
+# worker count) is identical.
 upstream_baseline_key() {
-  printf '%s|%s|%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest_ref^{commit}")" "$(git rev-parse "$latest_ref:pnpm-lock.yaml")" \
-    "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" "$UPSTREAM_ROOT" | shasum -a 256 | cut -c1-16
+  printf '%s|%s|%s|%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest_ref^{commit}")" "$(git rev-parse "$latest_ref:pnpm-lock.yaml")" \
+    "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" "$UPSTREAM_ROOT" "workers=${VITEST_WORKERS:-default}" | shasum -a 256 | cut -c1-16
 }
 
+# Sets UPSTREAM_BASELINE. Why no subshell: a watchdog trip inside it must end the job.
 upstream_report() {
-  local key report confirm
+  local key report confirm file
+  local failing=()
   key="$(upstream_baseline_key)"
   report="$STATE_DIR/upstream-tests-$key.json"
   confirm="$STATE_DIR/upstream-confirm-$key.json"
@@ -272,12 +463,13 @@ upstream_report() {
     log "Running upstream $latest test suite for the failure baseline ($key)."
     git worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
     git worktree add --force --detach "$UPSTREAM_WORKTREE" "$latest_ref" >/dev/null
-    (
-      cd "$UPSTREAM_WORKTREE" && pnpm install --frozen-lockfile >/dev/null 2>&1 || exit 1
+    cd "$UPSTREAM_WORKTREE"
+    if run_step "upstream pnpm install" $(step_limits install) \
+      "$RUN_DIR/step-upstream-install.log" pnpm install --frozen-lockfile; then
       run_unit_tests "$report" || true
-      [[ -s "$report" ]] || exit 1
+    fi
+    if [[ -s "$report" ]]; then
       # Re-run upstream's failing files so only reproducible failures enter the baseline.
-      local failing=()
       while IFS= read -r file; do failing+=("$file"); done < <(node "$COMPARE" --files "$report" "$UPSTREAM_ROOT")
       if (( ${#failing[@]} > 0 )); then
         log "Confirming ${#failing[@]} failing upstream file(s)."
@@ -287,23 +479,30 @@ upstream_report() {
         echo '{"testResults":[]}' > "$confirm"
         echo 'no upstream failures to confirm' > "${confirm%.json}.log"
       fi
-    ) || true
+    fi
+    cd "$REPO"
     git worktree remove --force "$UPSTREAM_WORKTREE" 2>/dev/null || true
     [[ -s "$report" && -s "${report%.json}.log" && -s "$confirm" && -s "${confirm%.json}.log" ]] || return 1
   fi
-  echo "$report,$confirm"
+  UPSTREAM_BASELINE="$report,$confirm"
+}
+
+mobile_install() {
+  cd mobile && pnpm install --frozen-lockfile
 }
 
 verify() {
   node --test fork-sync/*.test.mjs >&2 || return 1
   # Why: build:mac packages x64 and arm64, which needs both native variants installed.
-  pnpm run install:release >&2 || return 1
+  run_logged_step "pnpm install:release" $(step_limits install) pnpm run install:release || return 1
   # Why: build:mac bundles the mobile web client, which resolves React Native from mobile/'s own install.
-  (cd mobile && pnpm install --frozen-lockfile) >&2 || return 1
-  pnpm run tc >&2 || return 1
+  run_logged_step "mobile pnpm install" $(step_limits install) mobile_install || return 1
+  run_logged_step "typecheck" $(step_limits typecheck) pnpm run tc || return 1
+  choose_vitest_workers
   local baseline
   local fork_report="$FORK_REPORT" retry_report="$RETRY_REPORT"
-  baseline="$(upstream_report)" || { log "Could not produce the upstream test report."; return 1; }
+  upstream_report || { log "Could not produce the upstream test report."; return 1; }
+  baseline="$UPSTREAM_BASELINE"
   rm -f "$fork_report" "$retry_report" "${fork_report%.json}.log" "${retry_report%.json}.log"
   run_unit_tests "$fork_report" || true
   [[ -s "$fork_report" ]] || { log "Fork test run produced no report."; return 1; }
@@ -324,6 +523,46 @@ verify() {
   fi
   log "Fork-only test failures:"; cat "$INTRODUCED_FILE" >&2
   return 1
+}
+
+# Why: --no-commit leaves room to correct the result before it is committed, and
+# the commit then runs the repo's pre-commit hook like any other commit.
+merge_upstream_release() {
+  local conflicted=false auto_resolved normalized file
+  local changed_by_merge=()
+  git merge --no-ff --no-commit -m "chore(fork): merge upstream $latest" "$latest_ref" || conflicted=true
+  if [[ "$conflicted" == true ]]; then
+    log "Merge has conflicts: $(git diff --name-only --diff-filter=U | tr '\n' ' ')"
+    auto_resolved="$(node "$RESOLVE_UNTOUCHED" "$REPO" "$pre_merge")" \
+      || { git merge --abort; fail "automatic pre-resolution of untouched conflicts failed"; }
+    if [[ -n "$auto_resolved" ]]; then
+      log "Took upstream $latest for conflicts in files the fork never modified: $(tr '\n' ' ' <<<"$auto_resolved")"
+    fi
+  fi
+  # Why: when the previous upstream release came from a diverged line, git can
+  # merge a file the fork never touched without conflict yet wrongly, e.g. keep
+  # the same block twice because both lines added it at different places.
+  normalized="$(node "$RESOLVE_UNTOUCHED" --normalize "$REPO" "$pre_merge" "$latest_ref")" \
+    || { git merge --abort; fail "restoring upstream versions of files the fork never modified failed"; }
+  if [[ -n "$normalized" ]]; then
+    log "Restored upstream $latest for files the fork never modified: $(tr '\n' ' ' <<<"$normalized")"
+  fi
+  if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+    log "Conflicts left for Claude: $(git diff --name-only --diff-filter=U | tr '\n' ' ')"
+    run_claude "Resolve every merge conflict from merging upstream release $latest into $BRANCH. Run \`git diff --name-only --diff-filter=U\` to list them." \
+      || { git merge --abort; fail "Claude conflict resolution session failed"; }
+  elif [[ "$conflicted" == true ]]; then
+    log "Every conflict was in a file the fork never modified; skipping the Claude session."
+  fi
+  if [[ "$conflicted" == true ]]; then
+    while IFS= read -r file; do changed_by_merge+=("$file"); done < <(git diff --name-only "$pre_merge" --)
+    if [[ -n "$(git diff --name-only --diff-filter=U)" ]] \
+      || { (( ${#changed_by_merge[@]} > 0 )) && git grep -nE '^(<<<<<<<|>>>>>>>) ' -- "${changed_by_merge[@]}" >/dev/null; }; then
+      git merge --abort
+      fail "conflicts remain after Claude session"
+    fi
+  fi
+  git commit --no-edit || { git merge --abort; fail "could not commit the merge of $latest"; }
 }
 
 # Keep the Mac awake for merge, verification and build; installation waits
@@ -358,29 +597,7 @@ if git merge-base --is-ancestor "$latest_ref" HEAD; then
   log "$latest is already merged into $BRANCH."
 else
   merged_new_release=true
-  if ! git merge --no-ff --no-edit -m "chore(fork): merge upstream $latest" "$latest_ref"; then
-    log "Merge has conflicts: $(git diff --name-only --diff-filter=U | tr '\n' ' ')"
-    auto_resolved="$(node "$RESOLVE_UNTOUCHED" "$REPO" "$pre_merge")" \
-      || { git merge --abort; fail "automatic pre-resolution of untouched conflicts failed"; }
-    if [[ -n "$auto_resolved" ]]; then
-      log "Took upstream $latest for conflicts in files the fork never modified: $(tr '\n' ' ' <<<"$auto_resolved")"
-    fi
-    if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
-      log "Conflicts left for Claude: $(git diff --name-only --diff-filter=U | tr '\n' ' ')"
-      run_claude "Resolve every merge conflict from merging upstream release $latest into $BRANCH. Run \`git diff --name-only --diff-filter=U\` to list them." \
-        || { git merge --abort; fail "Claude conflict resolution session failed"; }
-    else
-      log "Every conflict was in a file the fork never modified; skipping the Claude session."
-    fi
-    changed_by_merge=()
-    while IFS= read -r file; do changed_by_merge+=("$file"); done < <(git diff --name-only "$pre_merge" --)
-    if [[ -n "$(git diff --name-only --diff-filter=U)" ]] \
-      || { (( ${#changed_by_merge[@]} > 0 )) && git grep -nE '^(<<<<<<<|>>>>>>>) ' -- "${changed_by_merge[@]}" >/dev/null; }; then
-      git merge --abort
-      fail "conflicts remain after Claude session"
-    fi
-    git commit --no-edit || { git merge --abort; fail "could not commit the resolved merge"; }
-  fi
+  merge_upstream_release
 fi
 
 current="$(git rev-parse --short=12 HEAD)"
@@ -406,7 +623,9 @@ fi
 
 log "Building signed macOS app for $current."
 prepare_build_output
-ORCA_SELF_MANAGED_UPDATES=1 ORCA_MAC_LOCAL_APP_ONLY=1 CSC_NAME="$SIGN_IDENTITY" pnpm run build:mac >&2 || fail "build failed for $current"
+run_logged_step "build:mac" $(step_limits build) \
+  env ORCA_SELF_MANAGED_UPDATES=1 ORCA_MAC_LOCAL_APP_ONLY=1 CSC_NAME="$SIGN_IDENTITY" pnpm run build:mac \
+  || fail "build failed for $current"
 case "$(uname -m)" in
   arm64) built_app="dist/mac-arm64/Orca.app" ;;
   *) built_app="dist/mac/Orca.app" ;;
