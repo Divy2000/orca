@@ -19,10 +19,15 @@ const QUICK_WATCH = 'WATCHDOG_POLL_SECONDS=0.2 KILL_GRACE_SECONDS=0.5 CURRENT_ST
 const LOAD = (load, cores = 8) =>
   `load_average_5m() { echo ${load}; }; cpu_count() { echo ${cores}; }`
 
+// Why: the machine may be heavily loaded, so tests assert which limit tripped
+// and what survived, never how fast; this outer limit only turns a watchdog
+// that never trips into a failure instead of a hang.
+const OUTER_TIMEOUT_MS = 5 * 60 * 1000
+const FAR = 600
+
 // Runs `body` as a watched step named "unit tests (fork)".
-function watchStep(t, body, { budget = 30, stall = 1 } = {}) {
+function watchStep(t, body, { budget = FAR, stall = 1 } = {}) {
   const dir = tempDir(t)
-  const started = Date.now()
   const run = runFunctions(
     dir,
     WATCHDOG,
@@ -32,12 +37,14 @@ function watchStep(t, body, { budget = 30, stall = 1 } = {}) {
       `D='${dir}'`,
       `step() { ${body}; }`,
       `run_step 'unit tests (fork)' ${budget} ${stall} '${dir}/step.log' step`
-    ].join('\n')
+    ].join('\n'),
+    { timeout: OUTER_TIMEOUT_MS }
   )
+  assert.equal(run.error, undefined, 'the watched step finished before the outer timeout')
   const notifications = existsSync(join(dir, 'notifications'))
     ? readFileSync(join(dir, 'notifications'), 'utf8')
     : ''
-  return { dir, run, notifications, seconds: (Date.now() - started) / 1000 }
+  return { dir, run, notifications }
 }
 
 const alive = (pid) => {
@@ -52,42 +59,49 @@ const alive = (pid) => {
   }
 }
 
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 async function eventuallyDead(pids) {
-  for (let attempt = 0; attempt < 40 && pids.some(alive); attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 100))
+  for (let attempt = 0; attempt < 600 && pids.some(alive); attempt += 1) {
+    await pause(100)
   }
   return pids.filter(alive)
 }
 
 const readPid = (path) => Number(readFileSync(path, 'utf8'))
 
-test('given a step that stops producing output, the watchdog kills it and fails with the machine load', (t) => {
-  const { run, notifications, seconds } = watchStep(t, 'echo started; sleep 30')
+test('given a step that stops producing output, the watchdog kills it and fails with the machine load', async (t) => {
+  const { dir, run, notifications } = watchStep(
+    t,
+    `echo started; sleep ${FAR} & echo $! > "$D/sleep.pid"; wait`
+  )
   assert.equal(run.status, 1)
   assert.match(notifications, /unit tests \(fork\) stalled .*machine load was 3\.25 on 8 cores/)
-  assert.ok(seconds < 10, `tripped after ${seconds}s`)
+  assert.deepEqual(await eventuallyDead([readPid(join(dir, 'sleep.pid'))]), [])
 })
 
 test('given a step that keeps printing past its budget, the watchdog kills it and fails', (t) => {
-  const { run, notifications, seconds } = watchStep(
-    t,
-    'while true; do echo tick; sleep 0.1; done',
-    { budget: 2, stall: 30 }
-  )
+  const { run, notifications } = watchStep(t, 'while true; do echo tick; sleep 0.1; done', {
+    budget: 2,
+    stall: FAR
+  })
   assert.equal(run.status, 1)
   assert.match(notifications, /unit tests \(fork\) exceeded its budget of 2s/)
-  assert.ok(seconds < 10, `tripped after ${seconds}s`)
 })
 
 test('given a step that keeps printing, it runs to completion past the stall threshold', (t) => {
+  const stall = 4
   const { dir, run, notifications } = watchStep(
     t,
-    'for i in 1 2 3 4 5 6 7 8 9 10; do echo "line $i"; sleep 0.3; done',
-    { stall: 2 }
+    'date +%s; for i in $(seq 1 40); do echo "line $i"; sleep 0.2; done; date +%s',
+    { stall }
   )
   assert.equal(run.status, 0, run.stderr)
-  assert.match(readFileSync(join(dir, 'step.log'), 'utf8'), /line 10/)
   assert.equal(notifications, '')
+  const log = readFileSync(join(dir, 'step.log'), 'utf8').trim().split('\n')
+  assert.equal(log.at(-2), 'line 40')
+  const ranFor = Number(log.at(-1)) - Number(log[0])
+  assert.ok(ranFor > stall, `the step outlived the ${stall}s stall threshold (ran ${ranFor}s)`)
 })
 
 test('given a step that fails on its own, its exit status is returned without a watchdog trip', (t) => {
@@ -100,9 +114,12 @@ test('given a stalled step with a child, a grandchild and a detached process, no
   const { dir, run } = watchStep(
     t,
     [
-      `sh -c 'sleep 60 & echo $! > "$0/grandchild.pid"; wait' "$D" &`,
+      `sh -c 'sleep ${FAR} & echo $! > "$0/grandchild.pid"; wait' "$D" &`,
       'echo $! > "$D/child.pid"',
-      `node -e 'const c = require("child_process").spawn("sleep", ["60"], { detached: true, stdio: "ignore" }); require("fs").writeFileSync(process.argv[1], String(c.pid)); c.unref(); setInterval(() => {}, 1e6)' "$D/detached.pid" &`,
+      `node -e 'const c = require("child_process").spawn("sleep", ["${FAR}"], { detached: true, stdio: "ignore" }); require("fs").writeFileSync(process.argv[1], String(c.pid)); c.unref(); setInterval(() => {}, 1e6)' "$D/detached.pid" &`,
+      // Keep printing until every process exists, so a slow start cannot look like a stall.
+      'until [ -s "$D/detached.pid" ] && [ -s "$D/grandchild.pid" ]; do echo starting; sleep 0.1; done',
+      'echo ready',
       'wait'
     ].join('\n')
   )
@@ -125,15 +142,15 @@ test('given the job is terminated during a step, the step tree is killed on exit
           QUICK_WATCH,
           `trap stop_current_step EXIT`,
           `trap 'exit 143' TERM`,
-          `step() { sleep 60 & echo $! > '${dir}/child.pid'; wait; }`,
-          `run_step 'typecheck' 60 60 '${dir}/step.log' step`
+          `step() { sleep ${FAR} & echo $! > '${dir}/child.pid'; wait; }`,
+          `run_step 'typecheck' ${FAR} ${FAR} '${dir}/step.log' step`
         ].join('\n')
       )
     ],
     { stdio: 'ignore' }
   )
-  for (let attempt = 0; attempt < 50 && !existsSync(join(dir, 'child.pid')); attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 100))
+  for (let attempt = 0; attempt < 600 && !existsSync(join(dir, 'child.pid')); attempt += 1) {
+    await pause(100)
   }
   const child = readPid(join(dir, 'child.pid'))
   const exited = new Promise((resolve) => job.on('exit', (code) => resolve(code)))

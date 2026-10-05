@@ -47,6 +47,9 @@ export function harnessScript(dir, names, call) {
   ].join('\n')
 }
 
-export function runFunctions(dir, names, call) {
-  return spawnSync('/bin/bash', ['-c', harnessScript(dir, names, call)], { encoding: 'utf8' })
+export function runFunctions(dir, names, call, options = {}) {
+  return spawnSync('/bin/bash', ['-c', harnessScript(dir, names, call)], {
+    encoding: 'utf8',
+    ...options
+  })
 }
