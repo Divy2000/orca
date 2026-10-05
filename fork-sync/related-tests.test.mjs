@@ -27,12 +27,39 @@ const RELATED_CHANGES = {
   'fork-sync/tool.mjs': 'export {}\n'
 }
 
-// The release has src/a.ts, src/old.ts, src/gone.ts, docs and fork-sync/ files;
-// by default the fork edits, adds, renames and deletes sources.
+// Vitest configs that reach helpers the way config/vitest.config.ts does: by
+// relative import (with and without an extension) and as setupFiles paths.
+const VITEST_CONFIGS = {
+  'config/vitest.config.ts': [
+    "import { resolve } from 'node:path'",
+    "import { UNIT_INCLUDE } from './scripts/ci-unit-files.mjs'",
+    'export default {',
+    '  test: {',
+    '    include: UNIT_INCLUDE,',
+    '    setupFiles: [resolve(\'config/scripts/vitest-guard.ts\'), resolve("config/scripts/happy-dom-setup.ts")]',
+    '  }',
+    '}',
+    ''
+  ].join('\n'),
+  'config/vitest.performance.config.ts': [
+    "import baseConfig from './vitest.config'",
+    "import { perf } from './scripts/perf.helper'",
+    'export default { ...baseConfig, perf }',
+    ''
+  ].join('\n'),
+  'config/scripts/ci-unit-files.mjs': 'export const UNIT_INCLUDE = []\n',
+  'config/scripts/vitest-guard.ts': 'export {}\n',
+  'config/scripts/happy-dom-setup.ts': 'export {}\n',
+  'config/scripts/perf.helper.ts': 'export const perf = 1\n',
+  'config/scripts/unrelated.mjs': 'export {}\n'
+}
+
+// The release has src/a.ts, src/old.ts, src/gone.ts, docs, fork-sync/ files and
+// vitest configs; by default the fork edits, adds, renames and deletes sources.
 function forkRepo(t, changes = FORK_CHANGES) {
   const dir = tempDir(t)
   const repo = join(dir, 'repo')
-  for (const path of ['src', 'test', 'docs', 'fork-sync']) {
+  for (const path of ['src', 'test', 'docs', 'fork-sync', 'config/scripts']) {
     mkdirSync(join(repo, path), { recursive: true })
   }
   git(repo, 'init', '-q', '-b', 'main')
@@ -44,7 +71,8 @@ function forkRepo(t, changes = FORK_CHANGES) {
       'src/gone.ts': 'export const gone = 1\n',
       'README.md': 'readme\n',
       'docs/old.md': 'old\n',
-      'fork-sync/old.mjs': 'export {}\n'
+      'fork-sync/old.mjs': 'export {}\n',
+      ...VITEST_CONFIGS
     },
     'release'
   )
@@ -95,7 +123,7 @@ const selectScope = (t, env, changes = RELATED_CHANGES) => {
   const { dir, repo } = forkRepo(t, changes)
   return runFunctions(
     dir,
-    [...RELATED_FUNCTIONS, 'full_suite_reason', 'select_test_scope'],
+    [...RELATED_FUNCTIONS, 'vitest_config_inputs', 'full_suite_reason', 'select_test_scope'],
     [
       `latest=v1.1.0 latest_ref=${RELEASE}`,
       env,
@@ -154,6 +182,34 @@ test('given a changed global test input, the gate falls back to the full suites 
       `${input}: ${run.stderr}`
     )
   }
+})
+
+test('given a fork change to a file the vitest configs load, the gate falls back to the full suites', (t) => {
+  for (const input of [
+    'config/scripts/vitest-guard.ts',
+    'config/scripts/happy-dom-setup.ts',
+    'config/scripts/ci-unit-files.mjs',
+    'config/scripts/perf.helper.ts'
+  ]) {
+    const run = selectScope(t, ':', { ...RELATED_CHANGES, [input]: 'export const changed = 1\n' })
+    assert.equal(run.status, 0, `${input}: ${run.stderr}`)
+    assert.equal(run.stdout, 'scope=full\nfork=\nupstream=\n', input)
+    assert.ok(
+      run.stderr.includes(
+        `Running the full unit test suites: the fork changed global test inputs: ${input}.`
+      ),
+      `${input}: ${run.stderr}`
+    )
+  }
+})
+
+test('given a fork change to a config/scripts file no vitest config loads, the gate still selects related tests', (t) => {
+  const run = selectScope(t, ':', {
+    ...RELATED_CHANGES,
+    'config/scripts/unrelated.mjs': 'export const changed = 1\n'
+  })
+  assert.equal(run.status, 0, run.stderr)
+  assert.match(run.stdout, /^scope=related\nfork=.*config\/scripts\/unrelated\.mjs/)
 })
 
 test('given fork-sync or non-source deletions and look-alike files, the gate still selects related tests', (t) => {

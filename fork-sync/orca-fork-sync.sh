@@ -534,11 +534,37 @@ source_files() {
 }
 
 # Prints why related tests cannot stand in for the full suites, or nothing.
+# Prints the repo paths the vitest configs at HEAD load: quoted relative paths
+# ("./scripts/x.mjs", resolved against the config's directory) and quoted
+# repo-root "config/..." paths. A path without a source extension is also listed
+# with each one, since an import may omit it (even after a dot: "./vitest.config").
+vitest_config_inputs() {
+  local configs config
+  configs="$(git ls-tree -r --name-only HEAD -- config)" || return 1
+  printf '%s\n' "$configs" | grep -E '^config/vitest[^/]*\.config\.[^/]+$' | while IFS= read -r config; do
+    git show "HEAD:$config" | node -e '
+      const { posix } = require("node:path")
+      const source = require("node:fs").readFileSync(0, "utf8")
+      const quoted = /[\x22\x27`]((?:\.\.?|config)\/[^\x22\x27`\s]+)[\x22\x27`]/g
+      const extensions = [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"]
+      for (const [, spec] of source.matchAll(quoted)) {
+        const path = spec.startsWith("config/")
+          ? posix.normalize(spec)
+          : posix.join(posix.dirname(process.argv[1]), spec)
+        console.log(path)
+        if (!extensions.includes(posix.extname(path))) {
+          for (const ext of extensions) console.log(path + ext)
+        }
+      }
+    ' "$config"
+  done | sort -u
+}
+
 # Why: vitest related follows the current import graph, so it misses tests of
 # deleted or renamed-away modules, and inputs every test depends on
 # (dependencies, TypeScript and vitest/vite config) make every test related.
 full_suite_reason() {
-  local deleted changed global
+  local deleted changed global loaded
   deleted="$(git diff --name-only --no-renames --diff-filter=D "$latest_ref" --)" || return 1
   deleted="$(printf '%s\n' "$deleted" | source_files)"
   if [[ -n "$deleted" ]]; then
@@ -550,6 +576,13 @@ full_suite_reason() {
   global="$(printf '%s\n' "$changed" | grep -v '^fork-sync/' | grep -E \
     '^(pnpm-lock\.yaml|package\.json|mobile/package\.json|mobile/pnpm-lock\.yaml|config/vitest.*)$|(^|/)(tsconfig[^/]*\.json|\.npmrc|pnpm-workspace\.yaml|vitest[^/]*\.config\.[cm]?[jt]s)$' \
     || true)"
+  # Why: setup files, reporters and helpers the vitest configs load affect every
+  # test, but `vitest related` only follows imports from test files.
+  loaded="$(vitest_config_inputs)" || return 1
+  if [[ -n "$loaded" ]]; then
+    global="$(printf '%s\n%s\n' "$global" "$(printf '%s\n' "$changed" | grep -Fx -f <(printf '%s\n' "$loaded") || true)" \
+      | grep -v '^$' | sort -u || true)"
+  fi
   if [[ -n "$global" ]]; then
     printf 'the fork changed global test inputs: %s' "$(echo $global)"
   fi
