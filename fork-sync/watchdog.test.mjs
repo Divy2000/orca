@@ -312,7 +312,7 @@ test('given a logged step, its output reaches the job log and its exit status is
   const dir = tempDir(t)
   const run = runFunctions(
     dir,
-    [...WATCHDOG, 'run_logged_step'],
+    [...WATCHDOG, 'step_log_path', 'run_logged_step'],
     [
       LOAD('1.0'),
       QUICK_WATCH,

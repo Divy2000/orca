@@ -18,12 +18,19 @@ function verifyWith(t, scenario) {
   mkdirSync(join(dir, 'scratch/sync'), { recursive: true })
   const run = runFunctions(
     dir,
-    ['log', 'fail', 'verify'],
+    ['log', 'fail', 'step_log_path', 'lockfile_mismatch', 'fork_install', 'verify'],
     [
-      `SCENARIO=${scenario} latest=v1.1.0 UPSTREAM_ROOT='${dir}/upstream'`,
+      `SCENARIO=${scenario} latest=v1.1.0 UPSTREAM_ROOT='${dir}/upstream' VERIFY_FAILURE=`,
       `COMPARE=compare INTRODUCED_FILE='${dir}/introduced.txt'`,
       'step_limits() { echo "60 60"; }',
-      'run_logged_step() { [[ "$SCENARIO" != "step:$1" ]]; }',
+      // `log:<step>:<text>` makes <step> fail with <text> in its step log.
+      'run_logged_step() {',
+      '  if [[ "$SCENARIO" == "log:$1:"* ]]; then',
+      '    printf "Error: %s\\n  Cannot install\\n" "${SCENARIO##*:}" > "$(step_log_path "$1")"',
+      '    return 1',
+      '  fi',
+      '  [[ "$SCENARIO" != "step:$1" ]]',
+      '}',
       'select_test_scope() { [[ "$SCENARIO" != select ]]; }',
       'nothing_to_test() { return 1; }',
       `upstream_report() { [[ "$SCENARIO" != upstream ]] && UPSTREAM_BASELINE='${dir}/up.json'; }`,
@@ -33,10 +40,15 @@ function verifyWith(t, scenario) {
       '  if [[ "$1" == --test ]]; then [[ "$SCENARIO" != self-tests ]]; return; fi',
       '  if [[ "$SCENARIO" == introduced ]]; then echo "test/x.test.ts > breaks"; return 1; fi',
       '}',
-      'if verify; then echo "verify returned 0"; else echo "verify returned $?"; fi'
+      'if verify; then echo "verify returned 0"; else echo "verify returned $?"; fi',
+      `printf '%s' "$VERIFY_FAILURE" > '${dir}/failure'`
     ].join('\n')
   )
-  return { run, notifications: readOr(join(dir, 'notifications')) }
+  return {
+    run,
+    notifications: readOr(join(dir, 'notifications')),
+    failure: readOr(join(dir, 'failure'))
+  }
 }
 
 test('given a passing gate, verify succeeds', (t) => {
@@ -44,11 +56,42 @@ test('given a passing gate, verify succeeds', (t) => {
   assert.equal(run.stdout.trim(), 'verify returned 0', run.stderr)
 })
 
-test('given a failing typecheck or introduced test failures, verify asks for a repair', (t) => {
-  for (const scenario of ['step:typecheck', 'introduced']) {
-    const { run, notifications } = verifyWith(t, scenario)
+test('given a failing typecheck or introduced test failures, verify asks for a repair and says which', (t) => {
+  for (const [scenario, failure] of [
+    ['step:typecheck', /`pnpm run tc` fails/],
+    ['introduced', /test failures or unhandled errors that the plain upstream release does not/]
+  ]) {
+    const { run, notifications, failure: described } = verifyWith(t, scenario)
     assert.equal(run.stdout.trim(), 'verify returned 1', `${scenario}: ${run.stderr}`)
     assert.equal(notifications, '', scenario)
+    assert.match(described, failure, scenario)
+  }
+})
+
+const LOCKFILE_CODES = [
+  'ERR_PNPM_OUTDATED_LOCKFILE',
+  'ERR_PNPM_LOCKFILE_CONFIG_MISMATCH',
+  'ERR_PNPM_NO_LOCKFILE',
+  'ERR_PNPM_BROKEN_LOCKFILE'
+]
+
+test('given a fork install fails on a lockfile out of sync after the merge, verify asks for a repair', (t) => {
+  for (const step of ['pnpm install:release', 'mobile pnpm install']) {
+    for (const code of LOCKFILE_CODES) {
+      const { run, notifications, failure } = verifyWith(t, `'log:${step}:${code}'`)
+      assert.equal(run.stdout.trim(), 'verify returned 1', `${step} ${code}: ${run.stderr}`)
+      assert.equal(notifications, '', `${step} ${code}`)
+      assert.ok(failure.includes(`\`${step}\` fails with ${code}`), `${step} ${code}: ${failure}`)
+    }
+  }
+})
+
+test('given a fork install fails for another reason, the job fails instead of starting a repair', (t) => {
+  for (const step of ['pnpm install:release', 'mobile pnpm install']) {
+    const { run, notifications } = verifyWith(t, `'log:${step}:ERR_PNPM_FETCH_404'`)
+    assert.equal(run.status, 1, step)
+    assert.equal(run.stdout, '', `${step}: verify must not return`)
+    assert.match(notifications, new RegExp(`${step} failed`), step)
   }
 })
 

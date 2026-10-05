@@ -150,10 +150,14 @@ run_step() {
 
 # Runs a watched step whose output belongs in the job log: it streams to a
 # step log the watchdog can measure and is copied into the job log at the end.
+step_log_path() {
+  printf '%s/step-%s.log' "$RUN_DIR" "$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '-')"
+}
+
 run_logged_step() {
   local name="$1" budget="$2" stall="$3"; shift 3
   local step_log status=0
-  step_log="$RUN_DIR/step-$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '-').log"
+  step_log="$(step_log_path "$name")"
   : >"$step_log"
   log "$name started; live output in $step_log"
   run_step "$name" "$budget" "$stall" "$step_log" "$@" || status=$?
@@ -236,6 +240,7 @@ KILL_GRACE_SECONDS=5
 CURRENT_STEP_PID=""
 VITEST_WORKERS=""
 VITEST_WORKERS_CHOSEN=false
+VERIFY_FAILURE=""
 TEST_SCOPE=""
 RELATED_FORK_SOURCES=""
 RELATED_UPSTREAM_SOURCES=""
@@ -684,19 +689,47 @@ mobile_install() {
   cd mobile && pnpm install --frozen-lockfile
 }
 
-# Returns 1 only for failures a Claude repair session can fix: a failing
-# typecheck, or test failures and unhandled errors the upstream release does not
-# have. Why fail directly otherwise: a broken install or a missing test report
-# says nothing about the fork's code, so a repair session would only guess.
+# Prints the pnpm frozen-lockfile error a logged step hit, if any. These four
+# were reproduced with pnpm 12: a manifest change, an "overrides" change, a
+# deleted lockfile, and a conflict marker left in the lockfile.
+lockfile_mismatch() {
+  grep -oE 'ERR_PNPM_(OUTDATED_LOCKFILE|LOCKFILE_CONFIG_MISMATCH|NO_LOCKFILE|BROKEN_LOCKFILE)' \
+    "$(step_log_path "$1")" 2>/dev/null | head -n 1 || true
+}
+
+# Runs a fork-side install. Why a lockfile error is repairable: a merge can
+# leave package manifests and their pnpm-lock.yaml out of sync, which a repair
+# session can fix; any other install failure says nothing about the fork's code.
+fork_install() {
+  local name="$1" code; shift
+  if run_logged_step "$name" $(step_limits install) "$@"; then
+    return 0
+  fi
+  code="$(lockfile_mismatch "$name")"
+  if [[ -z "$code" ]]; then
+    fail "$name failed"
+  fi
+  VERIFY_FAILURE="\`$name\` fails with $code: the merge left package manifests and their pnpm-lock.yaml out of sync"
+  log "$name failed with $code; a repair session can bring the lockfile back in sync."
+  return 1
+}
+
+# Returns 1 only for failures a Claude repair session can fix, described in
+# VERIFY_FAILURE: a lockfile out of sync after the merge, a failing typecheck,
+# or test failures and unhandled errors the upstream release does not have.
+# Why fail directly otherwise: a broken install or a missing test report says
+# nothing about the fork's code, so a repair session would only guess.
 verify() {
   node --test fork-sync/*.test.mjs >&2 || fail "fork-sync self-tests failed"
+  VERIFY_FAILURE=""
   # Why: build:mac packages x64 and arm64, which needs both native variants installed.
-  run_logged_step "pnpm install:release" $(step_limits install) pnpm run install:release \
-    || fail "pnpm install:release failed"
+  fork_install "pnpm install:release" pnpm run install:release || return 1
   # Why: build:mac bundles the mobile web client, which resolves React Native from mobile/'s own install.
-  run_logged_step "mobile pnpm install" $(step_limits install) mobile_install \
-    || fail "mobile pnpm install failed"
-  run_logged_step "typecheck" $(step_limits typecheck) pnpm run tc || return 1
+  fork_install "mobile pnpm install" mobile_install || return 1
+  if ! run_logged_step "typecheck" $(step_limits typecheck) pnpm run tc; then
+    VERIFY_FAILURE="\`pnpm run tc\` fails"
+    return 1
+  fi
   select_test_scope || fail "could not select the unit tests to run"
   if nothing_to_test; then
     return 0
@@ -724,6 +757,7 @@ verify() {
     fi
   fi
   log "Fork-only test failures:"; cat "$INTRODUCED_FILE" >&2
+  VERIFY_FAILURE="the fork has test failures or unhandled errors that the plain upstream release does not (listed in $INTRODUCED_FILE)"
   return 1
 }
 
@@ -813,7 +847,7 @@ if ! verify; then
   if [[ "$merged_new_release" == false ]]; then
     fail "verification failed on $current without a new merge"
   fi
-  run_claude "After merging upstream $latest, either \`pnpm run tc\` fails or the fork has test failures or unhandled errors that the plain upstream release does not (listed in $INTRODUCED_FILE). Find the root cause and fix it so both upstream and fork behavior are preserved." \
+  run_claude "After merging upstream $latest, $VERIFY_FAILURE. Find the root cause and fix it so both upstream and fork behavior are preserved." \
     || fail "Claude repair session failed; nothing pushed"
   if ! verify; then
     fail "verification still failing after Claude repair; nothing pushed"
