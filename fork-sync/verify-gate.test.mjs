@@ -72,7 +72,8 @@ const LOCKFILE_CODES = [
   'ERR_PNPM_OUTDATED_LOCKFILE',
   'ERR_PNPM_LOCKFILE_CONFIG_MISMATCH',
   'ERR_PNPM_NO_LOCKFILE',
-  'ERR_PNPM_BROKEN_LOCKFILE'
+  'ERR_PNPM_BROKEN_LOCKFILE',
+  'ERR_PNPM_FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE'
 ]
 
 test('given a fork install fails on a lockfile out of sync after the merge, verify asks for a repair', (t) => {

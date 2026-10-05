@@ -689,11 +689,12 @@ mobile_install() {
   cd mobile && pnpm install --frozen-lockfile
 }
 
-# Prints the pnpm frozen-lockfile error a logged step hit, if any. These four
+# Prints the pnpm frozen-lockfile error a logged step hit, if any. The first four
 # were reproduced with pnpm 12: a manifest change, an "overrides" change, a
-# deleted lockfile, and a conflict marker left in the lockfile.
+# deleted lockfile, and a conflict marker left in the lockfile; the fifth is a
+# packageManager pin the lockfile does not match.
 lockfile_mismatch() {
-  grep -oE 'ERR_PNPM_(OUTDATED_LOCKFILE|LOCKFILE_CONFIG_MISMATCH|NO_LOCKFILE|BROKEN_LOCKFILE)' \
+  grep -oE 'ERR_PNPM_(FROZEN_LOCKFILE_WITH_OUTDATED_LOCKFILE|OUTDATED_LOCKFILE|LOCKFILE_CONFIG_MISMATCH|NO_LOCKFILE|BROKEN_LOCKFILE)' \
     "$(step_log_path "$1")" 2>/dev/null | head -n 1 || true
 }
 
