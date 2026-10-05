@@ -236,6 +236,9 @@ KILL_GRACE_SECONDS=5
 CURRENT_STEP_PID=""
 VITEST_WORKERS=""
 VITEST_WORKERS_CHOSEN=false
+TEST_SCOPE=""
+RELATED_FORK_SOURCES=""
+RELATED_UPSTREAM_SOURCES=""
 
 LOCK_FILE="$STATE_DIR/sync.lock"
 # Why: shlock creates the pid file atomically, so concurrent starts cannot both win.
@@ -457,8 +460,15 @@ run_unit_tests() {
     "$console_log" unit_test_commands "$report" "$@"
 }
 
+# Runs vitest on test-file filters, or with --related first on source files
+# whose dependent tests should run.
 unit_test_commands() {
   local report="$1"; shift
+  local mode=(run)
+  if [[ "${1:-}" == --related ]]; then
+    shift
+    mode=(related --run)
+  fi
   local workers=()
   if [[ -n "$VITEST_WORKERS" ]]; then
     workers=(--maxWorkers="$VITEST_WORKERS")
@@ -467,7 +477,7 @@ unit_test_commands() {
   export TMPDIR
   # Why: ORCA_BALANCE_UNIT_SHARDS changes which tests run, so both runs must agree on it.
   NO_COLOR=1 node config/scripts/ensure-native-runtime.mjs --runtime=node \
-    && env -u ORCA_BALANCE_UNIT_SHARDS -u FORCE_COLOR NO_COLOR=1 pnpm exec vitest run --config config/vitest.config.ts \
+    && env -u ORCA_BALANCE_UNIT_SHARDS -u FORCE_COLOR NO_COLOR=1 pnpm exec vitest "${mode[@]}" --config config/vitest.config.ts \
       --reporter=json --reporter=default --outputFile.json="$report" ${workers[@]+"${workers[@]}"} "$@"
 }
 
@@ -478,8 +488,139 @@ unit_test_commands() {
 # (release and its commit, lockfile, Node, macOS, CPU, checkout root, vitest
 # worker count) is identical.
 upstream_baseline_key() {
-  printf '%s|%s|%s|%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest_ref^{commit}")" "$(git rev-parse "$latest_ref:pnpm-lock.yaml")" \
-    "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" "$UPSTREAM_ROOT" "workers=${VITEST_WORKERS:-default}" | shasum -a 256 | cut -c1-16
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest_ref^{commit}")" "$(git rev-parse "$latest_ref:pnpm-lock.yaml")" \
+    "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" "$UPSTREAM_ROOT" "workers=${VITEST_WORKERS:-default}" \
+    "tests=$(test_scope_key)" | shasum -a 256 | cut -c1-16
+}
+
+test_scope_key() {
+  if [[ "$TEST_SCOPE" == related ]]; then
+    printf 'related:%s' "$(printf '%s' "$RELATED_UPSTREAM_SOURCES" | shasum -a 256 | cut -c1-16)"
+  else
+    printf 'full'
+  fi
+}
+
+count_lines() {
+  if [[ -z "$1" ]]; then
+    echo 0
+  else
+    printf '%s\n' "$1" | wc -l | tr -d ' '
+  fi
+}
+
+# Prints the source files the fork changed relative to the upstream release
+# that still exist in the fork, one per line. fork-sync/ is this job's own code,
+# not part of the app's test suite.
+fork_changed_sources() {
+  local changed
+  changed="$(git diff --name-only --no-renames --diff-filter=d "$latest_ref" --)" || return 1
+  # Untracked files from a repair session are part of what gets committed.
+  changed="$changed"$'\n'"$(git ls-files --others --exclude-standard)"
+  printf '%s\n' "$changed" | source_files
+}
+
+# Filters stdin to app source files outside fork-sync/.
+source_files() {
+  grep -v '^fork-sync/' | grep -E '\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$' || true
+}
+
+# Prints why related tests cannot stand in for the full suites, or nothing.
+# Why: vitest related follows the current import graph, so it misses tests of
+# deleted or renamed-away modules, and inputs every test depends on
+# (dependencies, TypeScript and vitest/vite config) make every test related.
+full_suite_reason() {
+  local deleted changed global
+  deleted="$(git diff --name-only --no-renames --diff-filter=D "$latest_ref" --)" || return 1
+  deleted="$(printf '%s\n' "$deleted" | source_files)"
+  if [[ -n "$deleted" ]]; then
+    printf 'the fork deleted or renamed away %s source file(s): %s' \
+      "$(count_lines "$deleted")" "$(echo $deleted)"
+    return 0
+  fi
+  changed="$(git diff --name-only --no-renames "$latest_ref" --)" || return 1
+  global="$(printf '%s\n' "$changed" | grep -v '^fork-sync/' | grep -E \
+    '^(pnpm-lock\.yaml|package\.json|mobile/package\.json|config/vitest.*)$|(^|/)(tsconfig[^/]*\.json|\.npmrc|pnpm-workspace\.yaml|vitest[^/]*\.config\.[cm]?[jt]s)$' \
+    || true)"
+  if [[ -n "$global" ]]; then
+    printf 'the fork changed global test inputs: %s' "$(echo $global)"
+  fi
+}
+
+# Prints the paths read from stdin that exist in the upstream release.
+paths_in_upstream() {
+  local path
+  while IFS= read -r path; do
+    if [[ -n "$path" ]] && git cat-file -e "$latest_ref:$path" 2>/dev/null; then
+      printf '%s\n' "$path"
+    fi
+  done
+}
+
+# Why: the full suites took hours on a busy machine, so the gate runs only the
+# tests related to what the fork changed, in both checkouts, unless
+# ORCA_SYNC_FULL_TEST_SUITE=1. Files that exist only in the fork cannot go to
+# the upstream run, so fork-only tests have no baseline and must pass outright.
+select_test_scope() {
+  if [[ "${ORCA_SYNC_FULL_TEST_SUITE:-}" == 1 ]]; then
+    TEST_SCOPE=full
+    RELATED_FORK_SOURCES=""
+    RELATED_UPSTREAM_SOURCES=""
+    log "ORCA_SYNC_FULL_TEST_SUITE=1: running the full unit test suites."
+    return 0
+  fi
+  local reason
+  reason="$(full_suite_reason)" || return 1
+  if [[ -n "$reason" ]]; then
+    TEST_SCOPE=full
+    RELATED_FORK_SOURCES=""
+    RELATED_UPSTREAM_SOURCES=""
+    log "Running the full unit test suites: $reason."
+    return 0
+  fi
+  TEST_SCOPE=related
+  RELATED_FORK_SOURCES="$(fork_changed_sources)" || return 1
+  RELATED_UPSTREAM_SOURCES="$(paths_in_upstream <<<"$RELATED_FORK_SOURCES")" || return 1
+  log "Related tests: $(count_lines "$RELATED_FORK_SOURCES") changed source file(s) selected for the fork run; $(count_lines "$RELATED_UPSTREAM_SOURCES") of them exist in $latest."
+}
+
+nothing_to_test() {
+  if [[ "$TEST_SCOPE" == related && -z "$RELATED_FORK_SOURCES" ]]; then
+    log "No fork source changes relative to $latest; no related unit tests to run."
+    return 0
+  fi
+  return 1
+}
+
+report_test_files() {
+  node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).testResults.length)' "$1"
+}
+
+# Runs the gate's test scope for one checkout: the full suite, or the tests
+# related to <sources> (newline-separated). Returns run_unit_tests' status.
+run_scoped_tests() {
+  local label="$1" report="$2" sources="$3" status=0 path
+  local paths=()
+  if [[ "$TEST_SCOPE" == related ]]; then
+    while IFS= read -r path; do
+      if [[ -n "$path" ]]; then
+        paths+=("$path")
+      fi
+    done <<<"$sources"
+    if (( ${#paths[@]} == 0 )); then
+      echo '{"testResults":[]}' > "$report"
+      echo 'no related source files; no tests run' > "${report%.json}.log"
+      log "$label: no related source files; no tests run."
+      return 0
+    fi
+    run_unit_tests "$report" --related "${paths[@]}" || status=$?
+  else
+    run_unit_tests "$report" || status=$?
+  fi
+  if [[ -s "$report" ]]; then
+    log "$label: $(report_test_files "$report") test file(s) ran."
+  fi
+  return "$status"
 }
 
 # Sets UPSTREAM_BASELINE. Why no subshell: a watchdog trip inside it must end the job.
@@ -506,7 +647,7 @@ upstream_report() {
     fi
     if run_step "upstream pnpm install" $(step_limits install) \
       "$RUN_DIR/step-upstream-install.log" pnpm install --frozen-lockfile; then
-      run_unit_tests "$report" || true
+      run_scoped_tests "Upstream $latest tests" "$report" "$RELATED_UPSTREAM_SOURCES" || true
     fi
     if [[ -s "$report" ]]; then
       # Re-run upstream's failing files so only reproducible failures enter the baseline.
@@ -538,12 +679,16 @@ verify() {
   # Why: build:mac bundles the mobile web client, which resolves React Native from mobile/'s own install.
   run_logged_step "mobile pnpm install" $(step_limits install) mobile_install || return 1
   run_logged_step "typecheck" $(step_limits typecheck) pnpm run tc || return 1
+  select_test_scope || { log "Could not select the tests to run."; return 1; }
+  if nothing_to_test; then
+    return 0
+  fi
   local baseline
   local fork_report="$FORK_REPORT" retry_report="$RETRY_REPORT"
   upstream_report || { log "Could not produce the upstream test report."; return 1; }
   baseline="$UPSTREAM_BASELINE"
   rm -f "$fork_report" "$retry_report" "${fork_report%.json}.log" "${retry_report%.json}.log"
-  run_unit_tests "$fork_report" || true
+  run_scoped_tests "Fork tests" "$fork_report" "$RELATED_FORK_SOURCES" || true
   [[ -s "$fork_report" ]] || { log "Fork test run produced no report."; return 1; }
   if node "$COMPARE" "$baseline" "$UPSTREAM_ROOT" "$fork_report" "$REPO" > "$INTRODUCED_FILE"; then
     return 0

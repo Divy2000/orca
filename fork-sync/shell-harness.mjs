@@ -38,6 +38,7 @@ export function harnessScript(dir, names, call) {
     `INTERNAL_TEST_DIR='${dir}/state/test-run'`,
     `SCRATCH_TEST_DIR='${dir}/scratch/sync/test-run'`,
     `TEST_RUN_DIR='${dir}/state/test-run'`,
+    'TEST_SCOPE=full RELATED_FORK_SOURCES= RELATED_UPSTREAM_SOURCES=',
     `APP_PATH='${dir}/Applications/Orca.app'`,
     `LOG_FILE='${dir}/sync.log'`,
     'INSTALL_WAIT_SECONDS=60',
