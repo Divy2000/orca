@@ -321,6 +321,13 @@ test('given the related flag, vitest runs in related mode with the same config a
   )
 })
 
+test('given the serial flag, vitest runs the files one at a time in a single worker', (t) => {
+  assert.equal(
+    vitestCall(t, '--serial test/x.test.ts test/y.test.ts'),
+    'pnpm exec vitest run --config config/vitest.config.ts --reporter=json --reporter=default --outputFile.json=r.json --maxWorkers=1 --no-file-parallelism test/x.test.ts test/y.test.ts'
+  )
+})
+
 test('given a different related list or the full suite, the upstream baseline key changes', (t) => {
   const { dir, repo } = forkRepo(t)
   const key = (state) => {

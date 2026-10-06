@@ -465,18 +465,22 @@ run_unit_tests() {
     "$console_log" unit_test_commands "$report" "$@"
 }
 
-# Runs vitest on test-file filters, or with --related first on source files
-# whose dependent tests should run.
+# Runs vitest on test-file filters; with --related first, on source files whose
+# dependent tests should run; with --serial first, on test files one at a time
+# in a single worker.
 unit_test_commands() {
   local report="$1"; shift
   local mode=(run)
-  if [[ "${1:-}" == --related ]]; then
-    shift
-    mode=(related --run)
-  fi
   local workers=()
   if [[ -n "$VITEST_WORKERS" ]]; then
     workers=(--maxWorkers="$VITEST_WORKERS")
+  fi
+  if [[ "${1:-}" == --related ]]; then
+    shift
+    mode=(related --run)
+  elif [[ "${1:-}" == --serial ]]; then
+    shift
+    workers=(--maxWorkers=1 --no-file-parallelism)
   fi
   local TMPDIR="$TEST_RUN_DIR/tmp"
   export TMPDIR
@@ -494,8 +498,9 @@ unit_test_commands() {
 # worker count) is identical.
 # Bump the format whenever the way a baseline is built changes, so
 # baselines cached by the old way are never reused. 2: mobile/ is installed first.
+# 3: confirm re-runs are serial.
 upstream_baseline_key() {
-  local format=2
+  local format=3
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' "$latest" "$(git rev-parse "$latest_ref^{commit}")" "$(git rev-parse "$latest_ref:pnpm-lock.yaml")" \
     "$(node --version)" "$(sw_vers -productVersion)" "$(uname -m)" "$UPSTREAM_ROOT" "workers=${VITEST_WORKERS:-default}" \
     "tests=$(test_scope_key)" "baseline-format=$format" | shasum -a 256 | cut -c1-16
@@ -704,7 +709,9 @@ upstream_report() {
       while IFS= read -r file; do failing+=("$file"); done < <(node "$COMPARE" --files "$report" "$UPSTREAM_ROOT")
       if (( ${#failing[@]} > 0 )); then
         log "Confirming ${#failing[@]} failing upstream file(s)."
-        run_unit_tests "$confirm" "${failing[@]}" || true
+        # Why serial: a long test that only overruns its timeout when files compete
+        # for CPU must not enter the baseline; the fork retry runs the same way.
+        run_unit_tests "$confirm" --serial "${failing[@]}" || true
       else
         # Nothing re-runnable: confirm nothing, so unattributed upstream errors never mask fork ones.
         echo '{"testResults":[]}' > "$confirm"
@@ -784,7 +791,9 @@ verify() {
   while IFS= read -r file; do files+=("$file"); done < <(grep -v '^(unhandled error without a test file)' "$INTRODUCED_FILE" | sed 's/ > .*//' | sort -u)
   if (( ${#files[@]} > 0 )) && ! grep -q '^(unhandled error without a test file)' "$INTRODUCED_FILE"; then
     log "Re-running ${#files[@]} file(s) with fork-only failures."
-    run_unit_tests "$retry_report" "${files[@]}" || true
+    # Why serial: a file that failed only under load from parallel files passes
+    # alone; the upstream confirm run uses the same mode.
+    run_unit_tests "$retry_report" --serial "${files[@]}" || true
     if [[ -s "$retry_report" ]] \
       && node "$COMPARE" "$baseline" "$UPSTREAM_ROOT" "$retry_report" "$REPO" "${files[@]}" > "$INTRODUCED_FILE"; then
       return 0

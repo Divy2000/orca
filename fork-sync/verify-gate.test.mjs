@@ -35,7 +35,7 @@ function verifyWith(t, scenario) {
       'nothing_to_test() { return 1; }',
       `upstream_report() { [[ "$SCENARIO" != upstream ]] && UPSTREAM_BASELINE='${dir}/up.json'; }`,
       'run_scoped_tests() { [[ "$SCENARIO" == no-fork-report ]] || echo \'{"testResults":[]}\' > "$2"; }',
-      'run_unit_tests() { echo \'{"testResults":[]}\' > "$1"; }',
+      `run_unit_tests() { printf '%s\\n' "$*" >> '${dir}/unit-runs'; echo '{"testResults":[]}' > "$1"; }`,
       'node() {',
       '  if [[ "$1" == --test ]]; then [[ "$SCENARIO" != self-tests ]]; return; fi',
       '  if [[ "$SCENARIO" == introduced ]]; then echo "test/x.test.ts > breaks"; return 1; fi',
@@ -47,7 +47,8 @@ function verifyWith(t, scenario) {
   return {
     run,
     notifications: readOr(join(dir, 'notifications')),
-    failure: readOr(join(dir, 'failure'))
+    failure: readOr(join(dir, 'failure')),
+    unitRuns: readOr(join(dir, 'unit-runs'))
   }
 }
 
@@ -184,9 +185,9 @@ function cacheBaseline(dir, key) {
   }
 }
 
-// The key exactly as upstream_baseline_key computed it before baselines
-// included mobile/'s install.
-function keyBeforeFormatRevision(dir, repo) {
+// The key exactly as upstream_baseline_key computed it for an older baseline
+// format; format 1 had no format field (before mobile/'s install was included).
+function keyForFormat(dir, repo, format) {
   const out = (cmd, ...args) => execFileSync(cmd, args, { encoding: 'utf8' }).trim()
   const fields = [
     'v1.1.0',
@@ -197,7 +198,8 @@ function keyBeforeFormatRevision(dir, repo) {
     out('uname', '-m'),
     `${dir}/state/test-run/upstream`,
     'workers=default',
-    'tests=full'
+    'tests=full',
+    ...(format > 1 ? [`baseline-format=${format}`] : [])
   ]
   return createHash('sha256').update(fields.join('|')).digest('hex').slice(0, 16)
 }
@@ -215,7 +217,51 @@ test('given a baseline cached under the current key, it is reused without rebuil
 
 test('given a baseline cached before mobile installs were part of it, it is rebuilt', (t) => {
   const { dir, repo } = baselineRepo(t)
-  cacheBaseline(dir, keyBeforeFormatRevision(dir, repo))
+  cacheBaseline(dir, keyForFormat(dir, repo, 1))
+  const { run, steps } = runUpstream(dir, repo, 'none', REPORT)
+  assert.equal(run.stdout.trim(), 'upstream_report returned 0', run.stderr)
+  assert.doesNotMatch(run.stderr, /Reusing upstream/)
+  assert.match(steps, /upstream mobile pnpm install/)
+})
+
+test('given fork-only failures, the retry re-runs those files one at a time in a single worker', (t) => {
+  const { run, unitRuns } = verifyWith(t, 'introduced')
+  assert.equal(run.stdout.trim(), 'verify returned 1', run.stderr)
+  assert.match(unitRuns, /retry\.json --serial test\/x\.test\.ts\n$/)
+})
+
+test('given upstream failures, the confirm run re-runs those files one at a time in a single worker', (t) => {
+  const { dir, repo } = baselineRepo(t)
+  const root = `${dir}/state/test-run/upstream`
+  const failing = JSON.stringify({
+    testResults: [
+      {
+        name: `${root}/test/flaky.test.ts`,
+        status: 'failed',
+        assertionResults: [{ fullName: 'replays', status: 'failed' }]
+      }
+    ]
+  })
+  const { run } = runUpstream(
+    dir,
+    repo,
+    'none',
+    [
+      `run_scoped_tests() { printf '%s' '${failing}' > "$2"; echo log > "\${2%.json}.log"; }`,
+      `run_unit_tests() { printf '%s\\n' "$*" >> '${dir}/unit-runs'; echo '{"testResults":[]}' > "$1"; echo log > "\${1%.json}.log"; }`,
+      REPORT
+    ].join('\n')
+  )
+  assert.equal(run.stdout.trim(), 'upstream_report returned 0', run.stderr)
+  assert.match(
+    readOr(join(dir, 'unit-runs')),
+    /confirm-[0-9a-f]{16}\.json --serial test\/flaky\.test\.ts\n$/
+  )
+})
+
+test('given a baseline cached before confirm runs were serial, it is rebuilt', (t) => {
+  const { dir, repo } = baselineRepo(t)
+  cacheBaseline(dir, keyForFormat(dir, repo, 2))
   const { run, steps } = runUpstream(dir, repo, 'none', REPORT)
   assert.equal(run.stdout.trim(), 'upstream_report returned 0', run.stderr)
   assert.doesNotMatch(run.stderr, /Reusing upstream/)
